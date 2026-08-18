@@ -46,6 +46,11 @@
       text-transform:uppercase; color:var(--accent); display:flex; align-items:center; gap:8px; margin-bottom:10px;
     }
     .eyebrow .dot{ width:7px; height:7px; border-radius:50%; background:var(--accent); box-shadow:0 0 0 3px rgba(217,138,75,0.18); }
+    .lang-switch{ position:absolute; top:18px; right:clamp(16px,4vw,48px); display:flex; align-items:center; gap:5px; font-family:'JetBrains Mono',monospace; font-size:15px; letter-spacing:.06em; }
+    .lang-switch button{ background:none; border:none; padding:0; color:var(--text-dim); cursor:pointer; font:inherit; }
+    .lang-switch button.active{ color:var(--accent); }
+    .lang-switch button:not(.active):hover{ color:var(--text); }
+    .lang-switch span{ color:var(--line); }
     h1{ font-family:'Space Grotesk',sans-serif; font-weight:600; font-size:clamp(26px,4vw,38px); margin:0 0 6px; letter-spacing:-.01em; }
     header p{ color:var(--text-dim); max-width:640px; margin:0; font-size:14.5px; line-height:1.55; }
 
@@ -119,31 +124,34 @@
 
 <div class="contours">
   <header>
-    <div class="eyebrow"><span class="dot"></span> GeoSphere Austria · klima-v2-1d · daily station archive</div>
-    <h1>Austria Historic Temperature Comparison</h1>
-    <p><span id="stationDesc">Station 105</span>, daily mean, min &amp; max. The shaded band spans each day's recorded minimum to maximum; the line running through it is the daily mean.</p>
+    <div class="lang-switch" id="langSwitch">
+      <button type="button" data-lang="en" class="active">EN</button><span>/</span><button type="button" data-lang="de">DE</button>
+    </div>
+    <div class="eyebrow"><span class="dot"></span> <span data-i18n="eyebrow">GeoSphere Austria · klima-v2-1d · daily station archive</span></div>
+    <h1 data-i18n="h1">Austria Historic Temperature Comparison</h1>
+    <p><span id="stationDesc">Station 105</span><span data-i18n="header_desc">, daily mean, min &amp; max. The shaded band spans each day's recorded minimum to maximum; the line running through it is the daily mean.</span></p>
   </header>
 </div>
 
 <main>
 
   <div class="readout" id="readout">
-    <div><div class="k">Station</div><div class="v" id="ro-station">—</div></div>
-    <div><div class="k">Comparison year</div><div class="v accent" id="ro-yearA">—</div></div>
-    <div><div class="k">Baseline year</div><div class="v blue" id="ro-yearB">—</div></div>
-    <div><div class="k">Smoothing</div><div class="v" id="ro-smooth">off</div></div>
+    <div><div class="k" data-i18n="lbl_station">Station</div><div class="v" id="ro-station">—</div></div>
+    <div><div class="k" data-i18n="lbl_yearA">Comparison year</div><div class="v accent" id="ro-yearA">—</div></div>
+    <div><div class="k" data-i18n="lbl_yearB">Baseline year</div><div class="v blue" id="ro-yearB">—</div></div>
+    <div><div class="k" data-i18n="lbl_smooth">Smoothing</div><div class="v" id="ro-smooth">off</div></div>
   </div>
 
   <div class="panel">
     <div class="panel-row">
-      <div class="field"><label for="station">Station</label><select id="station"></select></div>
-      <div class="field"><label for="yearA">Comparison year</label><select id="yearA"></select></div>
-      <div class="field"><label for="yearB">Baseline year</label><select id="yearB"></select></div>
-      <div class="field"><label for="maWindow">MA window (days)</label><input type="number" id="maWindow" value="7" min="1" max="61"></div>
-      <div class="field"><label for="heatThreshold">Heat day threshold (&deg;C)</label><input type="number" id="heatThreshold" value="30"></div>
-      <button class="primary" id="loadBtn">Compare</button>
+      <div class="field"><label for="station" data-i18n="lbl_station">Station</label><select id="station"></select></div>
+      <div class="field"><label for="yearA" data-i18n="lbl_yearA">Comparison year</label><select id="yearA"></select></div>
+      <div class="field"><label for="yearB" data-i18n="lbl_yearB">Baseline year</label><select id="yearB"></select></div>
+      <div class="field"><label for="maWindow" data-i18n="lbl_ma">MA window (days)</label><input type="number" id="maWindow" value="7" min="1" max="61"></div>
+      <div class="field"><label for="heatThreshold" data-i18n="lbl_heat">Heat day threshold (&deg;C)</label><input type="number" id="heatThreshold" value="30"></div>
+      <button class="primary" id="loadBtn" data-i18n="btn_compare">Compare</button>
       <div class="toggle-wrap" style="margin-left:auto;">
-        <div class="toggle-label">Moving average<small>smooths the mean, min &amp; max curves</small></div>
+        <div class="toggle-label"><span data-i18n="toggle_title">Moving average</span><small data-i18n="toggle_sub">smooths the mean, min &amp; max curves</small></div>
         <div class="rocker" id="avgToggle"><div class="knob"></div></div>
       </div>
     </div>
@@ -152,18 +160,18 @@
 
   <div class="chart-card">
     <div class="chart-card-head">
-      <h2>Daily mean, enclosed by daily min–max</h2>
-      <span>Jan 1 – Dec 31, aligned by calendar day</span>
+      <h2 data-i18n="chart_h2">Daily mean, enclosed by daily min–max</h2>
+      <span data-i18n="chart_sub">Jan 1 – Dec 31, aligned by calendar day</span>
     </div>
     <svg id="chart" viewBox="0 0 900 450" xmlns="http://www.w3.org/2000/svg"></svg>
     <div class="legend" id="legend"></div>
   </div>
 
   <div class="diff-card">
-    <h2>Comparison − Baseline</h2>
-    <span>Differences over each year's daily mean temperature (°C)</span>
+    <h2 data-i18n="diff_h2">Comparison − Baseline</h2>
+    <span data-i18n="diff_sub">Differences over each year's daily mean temperature (°C)</span>
     <table id="diffTable">
-      <thead><tr><th>Statistic</th><th>Comparison</th><th>Baseline</th><th>Difference</th></tr></thead>
+      <thead><tr><th data-i18n="th_stat">Statistic</th><th data-i18n="th_comp">Comparison</th><th data-i18n="th_base">Baseline</th><th data-i18n="th_diff">Difference</th></tr></thead>
       <tbody></tbody>
     </table>
   </div>
@@ -171,13 +179,64 @@
 </main>
 
 <footer>
-  Data: <a href="https://data.hub.geosphere.at" target="_blank" rel="noopener" style="color:var(--accent)">GeoSphere Austria Data Hub</a>,
-  dataset <code>klima-v2-1d</code>. Requests are made directly from your browser to the GeoSphere API.
+  <span data-i18n="footer_1">Data:</span> <a href="https://data.hub.geosphere.at" target="_blank" rel="noopener" style="color:var(--accent)">GeoSphere Austria Data Hub</a><span data-i18n="footer_2">, dataset</span>
+  <code>klima-v2-1d</code><span data-i18n="footer_3">. Requests are made directly from your browser to the GeoSphere API.</span>
 </footer>
 
 <script src="temp-utils.js"></script>
 <script>
   (function () {
+    // Static UI copy only -- dynamic values (station names, numbers) never go through here.
+    const I18N = {
+      eyebrow: { en: "GeoSphere Austria · klima-v2-1d · daily station archive", de: "GeoSphere Austria · klima-v2-1d · t\u00e4gliches Stationsarchiv" },
+      h1: { en: "Austria Historic Temperature Comparison", de: "Historischer Temperaturvergleich \u00d6sterreich" },
+      header_desc: { en: ", daily mean, min & max. The shaded band spans each day's recorded minimum to maximum; the line running through it is the daily mean.", de: ", Tagesmittel, Min & Max. Das schattierte Band reicht vom t\u00e4glichen Minimum bis zum Maximum; die Linie darin zeigt das Tagesmittel." },
+      lbl_station: { en: "Station", de: "Station" },
+      lbl_yearA: { en: "Comparison year", de: "Vergleichsjahr" },
+      lbl_yearB: { en: "Baseline year", de: "Basisjahr" },
+      lbl_smooth: { en: "Smoothing", de: "Gl\u00e4ttung" },
+      lbl_ma: { en: "MA window (days)", de: "GD Fenster (Tage)" },
+      lbl_heat: { en: "Heat day threshold (\u00b0C)", de: "Hitzetag-Schwelle (\u00b0C)" },
+      btn_compare: { en: "Compare", de: "Vergleichen" },
+      toggle_title: { en: "Moving average", de: "Gleitender Durchschnitt" },
+      toggle_sub: { en: "smooths the mean, min & max curves", de: "gl\u00e4ttet Mittel-, Min- und Max-Kurven" },
+      chart_h2: { en: "Daily mean, enclosed by daily min\u2013max", de: "Tagesmittel, umschlossen von Tages-Min/Max" },
+      chart_sub: { en: "Jan 1 \u2013 Dec 31, aligned by calendar day", de: "1. Jan \u2013 31. Dez, nach Kalendertag ausgerichtet" },
+      diff_h2: { en: "Comparison \u2212 Baseline", de: "Vergleich \u2212 Basis" },
+      diff_sub: { en: "Differences over each year's daily mean temperature (\u00b0C)", de: "Differenzen der Tagesmitteltemperatur beider Jahre (\u00b0C)" },
+      th_stat: { en: "Statistic", de: "Statistik" },
+      th_comp: { en: "Comparison", de: "Vergleich" },
+      th_base: { en: "Baseline", de: "Basis" },
+      th_diff: { en: "Difference", de: "Differenz" },
+      footer_1: { en: "Data:", de: "Daten:" },
+      footer_2: { en: ", dataset", de: ", Datensatz" },
+      footer_3: { en: ". Requests are made directly from your browser to the GeoSphere API.", de: ". Anfragen erfolgen direkt von Ihrem Browser an die GeoSphere-API." },
+      loading: { en: "Loading\u2026", de: "L\u00e4dt\u2026" },
+      load_error: { en: "Could not load data: ", de: "Daten konnten nicht geladen werden: " },
+      load_error_hint: { en: " (if this keeps failing, the GeoSphere API may be blocking direct browser requests \u2014 check the browser console).", de: " (falls das weiterhin fehlschl\u00e4gt, blockiert die GeoSphere-API m\u00f6glicherweise direkte Browseranfragen \u2014 bitte die Browser-Konsole pr\u00fcfen)." },
+      off: { en: "off", de: "aus" },
+      on: { en: "on", de: "ein" },
+      row_mean: { en: "Mean difference", de: "Mittelwertdifferenz" },
+      row_median: { en: "Median difference", de: "Mediandifferenz" },
+      row_max: { en: "Maximum difference", de: "Maximaldifferenz" },
+      row_min: { en: "Minimum difference", de: "Minimaldifferenz" },
+      row_heat: { en: "Heat days", de: "HitzeTage" },
+    };
+    let lang = "en";
+    const t = (key) => I18N[key][lang];
+    function applyLang() {
+      document.documentElement.lang = lang;
+      document.querySelectorAll("[data-i18n]").forEach((el) => (el.textContent = t(el.dataset.i18n)));
+      document.querySelectorAll("#langSwitch button").forEach((b) => b.classList.toggle("active", b.dataset.lang === lang));
+    }
+    document.getElementById("langSwitch").addEventListener("click", (e) => {
+      const btn = e.target.closest("button[data-lang]");
+      if (!btn || btn.dataset.lang === lang) return;
+      lang = btn.dataset.lang;
+      applyLang();
+      compare(); // re-render status / smoothing readout / diff table labels in the new language
+    });
+
     let STATION_ID = "105"; // default; overridden once the station list loads (see loadStations)
     const ENDPOINT = "https://dataset.api.hub.geosphere.at/v1/station/historical/klima-v2-1d";
     const COLORS = ["#d98a4b", "#3a6ea5"]; // comparison year, baseline year
@@ -354,11 +413,11 @@
       const temp = (v) => v.toFixed(1) + "\u00B0";
       const count = (v) => v.toString();
       const rows = [
-        ["Mean difference", statsA.mean, statsB.mean, temp],
-        ["Median difference", statsA.median, statsB.median, temp],
-        ["Maximum difference", statsA.max, statsB.max, temp],
-        ["Minimum difference", statsA.min, statsB.min, temp],
-        ["Heat days", heatA, heatB, count],
+        [t("row_mean"), statsA.mean, statsB.mean, temp],
+        [t("row_median"), statsA.median, statsB.median, temp],
+        [t("row_max"), statsA.max, statsB.max, temp],
+        [t("row_min"), statsA.min, statsB.min, temp],
+        [t("row_heat"), heatA, heatB, count],
       ];
       diffBody.innerHTML = rows.map(([label, a, b, fmt]) => {
         const diff = a - b;
@@ -370,7 +429,7 @@
     }
 
     async function compare() {
-      statusEl.textContent = "Loading\u2026";
+      statusEl.textContent = t("loading");
       try {
         const [yearA, yearB] = [yearASel.value, yearBSel.value];
         const [byDayA, byDayB] = await Promise.all([fetchYear(yearA), fetchYear(yearB)]);
@@ -388,12 +447,11 @@
                 `<span><span class="swatch" style="background:${COLORS[1]}"></span>${yearB}</span>`;
         roYearA.textContent = yearA;
         roYearB.textContent = yearB;
-        roSmooth.textContent = smooth ? `on \u00B7 ${maWindow}d` : "off";
+        roSmooth.textContent = smooth ? `${t("on")} \u00B7 ${maWindow}d` : t("off");
         statusEl.textContent = "";
         statusEl.classList.remove("error");
       } catch (err) {
-        statusEl.textContent = "Could not load data: " + err.message +
-                " (if this keeps failing, the GeoSphere API may be blocking direct browser requests \u2014 check the browser console).";
+        statusEl.textContent = t("load_error") + err.message + t("load_error_hint");
         statusEl.classList.add("error");
       }
     }
