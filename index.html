@@ -1,0 +1,420 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Station Readout — Austria Temperature Comparison</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <style>
+    :root{
+      --bg: #10161d;
+      --panel: #1a222c;
+      --panel-2: #212b37;
+      --line: #2b3644;
+      --text: #e7ebee;
+      --text-dim: #93a1ae;
+      --accent: #d98a4b;
+      --accent-dim: #8a5b34;
+      --blue: #3a6ea5;
+      --bad: #c1440e;
+      --radius: 10px;
+    }
+    *{box-sizing:border-box;}
+    html,body{margin:0;padding:0;}
+    body{
+      background:
+              radial-gradient(1200px 600px at 15% -10%, rgba(217,138,75,0.08), transparent 60%),
+              var(--bg);
+      color:var(--text);
+      font-family:'Inter',system-ui,sans-serif;
+      min-height:100vh;
+    }
+
+    .contours{ position:relative; overflow:hidden; border-bottom:1px solid var(--line); }
+    .contours::before{
+      content:"";
+      position:absolute; inset:0;
+      background-image:
+              repeating-radial-gradient(circle at 82% 20%, transparent 0 18px, rgba(233,238,241,0.035) 19px 20px),
+              repeating-radial-gradient(circle at 10% 90%, transparent 0 26px, rgba(233,238,241,0.03) 27px 28px);
+      pointer-events:none;
+    }
+    header{ position:relative; padding:32px clamp(16px,4vw,48px) 26px; }
+    .eyebrow{
+      font-family:'JetBrains Mono',monospace; font-size:12px; letter-spacing:.14em;
+      text-transform:uppercase; color:var(--accent); display:flex; align-items:center; gap:8px; margin-bottom:10px;
+    }
+    .eyebrow .dot{ width:7px; height:7px; border-radius:50%; background:var(--accent); box-shadow:0 0 0 3px rgba(217,138,75,0.18); }
+    h1{ font-family:'Space Grotesk',sans-serif; font-weight:600; font-size:clamp(26px,4vw,38px); margin:0 0 6px; letter-spacing:-.01em; }
+    header p{ color:var(--text-dim); max-width:640px; margin:0; font-size:14.5px; line-height:1.55; }
+
+    main{ max-width:1180px; margin:0 auto; padding:28px clamp(16px,4vw,48px) 60px; }
+
+    .readout{
+      display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:1px;
+      background:var(--line); border:1px solid var(--line); border-radius:var(--radius);
+      overflow:hidden; margin-bottom:22px;
+    }
+    .readout div{ background:var(--panel); padding:14px 18px; }
+    .readout .k{ font-size:11px; letter-spacing:.09em; text-transform:uppercase; color:var(--text-dim); margin-bottom:5px; }
+    .readout .v{ font-family:'JetBrains Mono',monospace; font-size:18px; font-weight:500; color:var(--text); }
+    .readout .v.accent{ color:var(--accent); }
+    .readout .v.blue{ color:var(--blue); }
+
+    .panel{ background:var(--panel); border:1px solid var(--line); border-radius:var(--radius); padding:20px 22px; margin-bottom:22px; }
+    .panel-row{ display:flex; flex-wrap:wrap; align-items:flex-end; gap:22px; }
+    .field label{ display:block; font-size:11px; letter-spacing:.08em; text-transform:uppercase; color:var(--text-dim); margin-bottom:7px; }
+    .field select, .field input[type="number"]{
+      background:var(--panel-2); border:1px solid var(--line); color:var(--text);
+      font-family:'JetBrains Mono',monospace; font-size:14px; padding:9px 11px; border-radius:7px; min-width:110px;
+    }
+    .field input[type="number"]{ width:90px; min-width:0; }
+    .field select:focus, .field input[type="number"]:focus{ outline:none; border-color:var(--accent-dim); }
+    button{
+      font-family:'Inter',sans-serif; font-weight:600; font-size:13.5px; border-radius:7px;
+      border:1px solid var(--line); background:var(--panel-2); color:var(--text); padding:9px 15px;
+      cursor:pointer; transition:border-color .15s ease, transform .05s ease;
+    }
+    button:hover{ border-color:var(--accent-dim); }
+    button:active{ transform:translateY(1px); }
+    button.primary{ background:var(--accent); border-color:var(--accent); color:#1b120a; }
+    button.primary:hover{ border-color:var(--accent); filter:brightness(1.06); }
+
+    .toggle-wrap{ display:flex; align-items:center; gap:10px; }
+    .rocker{ position:relative; width:46px; height:26px; border-radius:14px; background:var(--panel-2); border:1px solid var(--line); cursor:pointer; flex:none; }
+    .rocker .knob{ position:absolute; top:2px; left:2px; width:20px; height:20px; border-radius:50%; background:var(--text-dim); transition:left .18s ease, background .18s ease; }
+    .rocker.on{ border-color:var(--accent-dim); }
+    .rocker.on .knob{ left:22px; background:var(--accent); }
+    .toggle-label{ font-size:13.5px; color:var(--text); }
+    .toggle-label small{ display:block; color:var(--text-dim); font-size:11.5px; margin-top:1px; }
+
+    .status{ margin-top:14px; font-family:'JetBrains Mono',monospace; font-size:12.5px; color:var(--text-dim); min-height:16px; }
+    .status.error{ color:var(--bad); }
+
+    .chart-card{ background:var(--panel); border:1px solid var(--line); border-radius:var(--radius); padding:22px 22px 12px; margin-bottom:22px; }
+    .chart-card-head{ display:flex; justify-content:space-between; align-items:baseline; flex-wrap:wrap; gap:10px; margin-bottom:14px; }
+    .chart-card-head h2{ font-family:'Space Grotesk',sans-serif; font-size:16px; font-weight:600; margin:0; }
+    .chart-card-head span{ font-size:12px; color:var(--text-dim); }
+    svg{ width:100%; height:auto; display:block; }
+    .legend{ display:flex; gap:1.5rem; margin-top:.6rem; font-size:.85rem; color:var(--text-dim); font-family:'JetBrains Mono',monospace; }
+    .swatch{ display:inline-block; width:10px; height:10px; margin-right:.4rem; vertical-align:middle; border-radius:50%; }
+
+    .diff-card{ background:var(--panel); border:1px solid var(--line); border-radius:var(--radius); padding:22px; }
+    .diff-card h2{ font-family:'Space Grotesk',sans-serif; font-size:16px; font-weight:600; margin:0 0 4px; }
+    .diff-card > span{ font-size:12px; color:var(--text-dim); }
+    table{ width:100%; border-collapse:collapse; margin-top:16px; font-family:'JetBrains Mono',monospace; font-size:13.5px; }
+    th, td{ text-align:right; padding:10px 12px; border-bottom:1px solid var(--line); }
+    th:first-child, td:first-child{ text-align:left; font-family:'Inter',sans-serif; color:var(--text-dim); font-size:13px; }
+    thead th{ color:var(--text-dim); font-weight:500; text-transform:uppercase; letter-spacing:.06em; font-size:11px; }
+    td.pos{ color:var(--bad); }
+    td.neg{ color:var(--blue); }
+
+    footer{ max-width:1180px; margin:0 auto; padding:0 clamp(16px,4vw,48px) 50px; color:var(--text-dim); font-size:12.5px; line-height:1.6; }
+
+    @media (max-width:560px){ .panel-row{ gap:16px; } th, td{ padding:8px 6px; } }
+  </style>
+</head>
+<body>
+
+<div class="contours">
+  <header>
+    <div class="eyebrow"><span class="dot"></span> GeoSphere Austria · klima-v2-1d · daily station archive</div>
+    <h1>Austria Historic Temperature Comparison</h1>
+    <p><span id="stationDesc">Station 105</span>, daily mean, min &amp; max. The shaded band spans each day's recorded minimum to maximum; the line running through it is the daily mean.</p>
+  </header>
+</div>
+
+<main>
+
+  <div class="readout" id="readout">
+    <div><div class="k">Station</div><div class="v" id="ro-station">—</div></div>
+    <div><div class="k">Comparison year</div><div class="v accent" id="ro-yearA">—</div></div>
+    <div><div class="k">Baseline year</div><div class="v blue" id="ro-yearB">—</div></div>
+    <div><div class="k">Smoothing</div><div class="v" id="ro-smooth">off</div></div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-row">
+      <div class="field"><label for="station">Station</label><select id="station"></select></div>
+      <div class="field"><label for="yearA">Comparison year</label><select id="yearA"></select></div>
+      <div class="field"><label for="yearB">Baseline year</label><select id="yearB"></select></div>
+      <div class="field"><label for="maWindow">MA window (days)</label><input type="number" id="maWindow" value="7" min="1" max="61"></div>
+      <div class="field"><label for="heatThreshold">Heat day threshold (&deg;C)</label><input type="number" id="heatThreshold" value="30"></div>
+      <button class="primary" id="loadBtn">Compare</button>
+      <div class="toggle-wrap" style="margin-left:auto;">
+        <div class="toggle-label">Moving average<small>smooths the mean, min &amp; max curves</small></div>
+        <div class="rocker" id="avgToggle"><div class="knob"></div></div>
+      </div>
+    </div>
+    <div class="status" id="status"></div>
+  </div>
+
+  <div class="chart-card">
+    <div class="chart-card-head">
+      <h2>Daily mean, enclosed by daily min–max</h2>
+      <span>Jan 1 – Dec 31, aligned by calendar day</span>
+    </div>
+    <svg id="chart" viewBox="0 0 900 450" xmlns="http://www.w3.org/2000/svg"></svg>
+    <div class="legend" id="legend"></div>
+  </div>
+
+  <div class="diff-card">
+    <h2>Comparison − Baseline</h2>
+    <span>Differences over each year's daily mean temperature (°C)</span>
+    <table id="diffTable">
+      <thead><tr><th>Statistic</th><th>Comparison</th><th>Baseline</th><th>Difference</th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </div>
+
+</main>
+
+<footer>
+  Data: <a href="https://data.hub.geosphere.at" target="_blank" rel="noopener" style="color:var(--accent)">GeoSphere Austria Data Hub</a>,
+  dataset <code>klima-v2-1d</code>. Requests are made directly from your browser to the GeoSphere API.
+</footer>
+
+<script src="temp-utils.js"></script>
+<script>
+  (function () {
+    let STATION_ID = "105"; // default; overridden once the station list loads (see loadStations)
+    const ENDPOINT = "https://dataset.api.hub.geosphere.at/v1/station/historical/klima-v2-1d";
+    const COLORS = ["#d98a4b", "#3a6ea5"]; // comparison year, baseline year
+    const DAYS = 366; // fixed grid; leap years get a Feb-29 slot, others just leave it null
+
+    const stationSel = document.getElementById("station");
+    const yearASel = document.getElementById("yearA");
+    const yearBSel = document.getElementById("yearB");
+    const statusEl = document.getElementById("status");
+    const svg = document.getElementById("chart");
+    const legendEl = document.getElementById("legend");
+    const avgToggle = document.getElementById("avgToggle");
+    const maWindowInput = document.getElementById("maWindow");
+    const heatThresholdInput = document.getElementById("heatThreshold");
+    const diffBody = document.querySelector("#diffTable tbody");
+    const roStation = document.getElementById("ro-station");
+    const roYearA = document.getElementById("ro-yearA");
+    const roYearB = document.getElementById("ro-yearB");
+    const roSmooth = document.getElementById("ro-smooth");
+    const stationDesc = document.getElementById("stationDesc");
+    const stationNames = {}; // station id -> name, filled by loadStations()
+
+    function updateStationLabel() {
+      const name = stationNames[STATION_ID];
+      roStation.textContent = name ? `${name} (${STATION_ID})` : STATION_ID;
+      stationDesc.textContent = name ? `Station ${STATION_ID} (${name})` : `Station ${STATION_ID}`;
+    }
+
+    // One call at startup gets every valid station id + name for this dataset,
+    // straight from the API's own /metadata endpoint -- no hardcoded list to
+    // go stale. The exact property names aren't documented publicly beyond
+    // "id"/"name" (seen via the API's R client), so we fall back across the
+    // likely variants rather than assume a single shape.
+    async function loadStations() {
+      try {
+        const res = await fetch(`${ENDPOINT}/metadata`);
+        if (!res.ok) throw new Error(`metadata: HTTP ${res.status}`);
+        const data = await res.json();
+        const raw = data.stations || (data.features || []).map((f) => f.properties) || [];
+        const stations = raw
+                .map((s) => ({ id: String(s.id ?? s.station_id ?? ""), name: s.name ?? s.station_name ?? "" }))
+                .filter((s) => s.id)
+                .sort((a, b) => a.name.localeCompare(b.name));
+        if (!stations.length) throw new Error("metadata: no stations in response");
+        stations.forEach((s) => (stationNames[s.id] = s.name));
+        stationSel.innerHTML = "";
+        stations.forEach((s) => stationSel.add(new Option(`${s.name} (${s.id})`, s.id)));
+        stationSel.value = stationNames[STATION_ID] ? STATION_ID : stations[0].id;
+        STATION_ID = stationSel.value;
+      } catch (err) {
+        // Metadata endpoint down/blocked: fall back to a single hardcoded
+        // option so the rest of the app still works.
+        stationSel.innerHTML = "";
+        stationSel.add(new Option(`Station ${STATION_ID}`, STATION_ID));
+      }
+      updateStationLabel();
+    }
+
+    const thisYear = new Date().getFullYear();
+    for (let y = thisYear; y >= 1900; y--) {
+      yearASel.add(new Option(y, y));
+      yearBSel.add(new Option(y, y));
+    }
+    yearASel.value = 2026;
+    yearBSel.value = 1947;
+
+    // Historical years never change once fetched, so cache by year -- this is
+    // what actually keeps us under GeoSphere's 240/hr limit, since without it
+    // every smoothing/threshold tweak below would silently refetch both years.
+    const yearCache = {};
+    async function fetchYear(year) {
+      if (yearCache[year]) return yearCache[year];
+      const url = `${ENDPOINT}?station_ids=${STATION_ID}&parameters=tl_mittel,tlmax,tlmin` +
+              `&start=${year}-01-01&end=${year}-12-31&output_format=csv`;
+      const res = await fetch(url, { headers: { Accept: "text/csv" } });
+      if (res.status === 429) {
+        // Docs expose ratelimit-reset (seconds) for exactly this -- one retry
+        // is enough here since we're not hammering the API, just occasionally
+        // racing our own concurrent yearA/yearB fetches.
+        const waitSec = parseInt(res.headers.get("ratelimit-reset"), 10) || 5;
+        await new Promise((r) => setTimeout(r, waitSec * 1000));
+        return fetchYear(year);
+      }
+      if (!res.ok) throw new Error(`${year}: HTTP ${res.status}`);
+      const rows = TempUtils.parseCsv(await res.text());
+      // Index by day-of-year (see temp-utils.js for why we align on the
+      // calendar day, not the raw row order). Non-leap Dec 31 simply never
+      // fills slot 366, and the chart draws null gaps as breaks, not zeros.
+      const byDay = new Array(DAYS + 1).fill(null);
+      for (const r of rows) byDay[TempUtils.dayOfYear(r.time)] = r;
+      yearCache[year] = byDay;
+      return byDay;
+    }
+
+    function toSeries(byDay, field) {
+      return byDay.slice(1).map((r) => (r ? r[field] : null));
+    }
+
+    function buildSeries(byDay, smooth, window) {
+      const s = { mean: toSeries(byDay, "mean"), min: toSeries(byDay, "min"), max: toSeries(byDay, "max") };
+      if (!smooth) return s;
+      return {
+        mean: TempUtils.movingAvg(s.mean, window),
+        min: TempUtils.movingAvg(s.min, window),
+        max: TempUtils.movingAvg(s.max, window),
+      };
+    }
+
+    // Heat days always count against the raw daily max, not the smoothed
+    // curve -- smoothing would blur which side of the threshold a day fell on.
+    function countHeatDays(byDay, threshold) {
+      return toSeries(byDay, "max").filter((v) => v !== null && v > threshold).length;
+    }
+
+    function render(seriesA, seriesB) {
+      const W = 900, H = 450, padL = 40, padR = 10, padT = 10, padB = 25;
+      const plotW = W - padL - padR, plotH = H - padT - padB;
+
+      const allVals = [...seriesA.max, ...seriesA.min, ...seriesB.max, ...seriesB.min].filter((v) => v !== null);
+      const yMin = Math.floor(Math.min(...allVals) - 2);
+      const yMax = Math.ceil(Math.max(...allVals) + 2);
+
+      const x = (i) => padL + (i / (DAYS - 1)) * plotW;
+      const y = (v) => padT + plotH - ((v - yMin) / (yMax - yMin)) * plotH;
+
+      function linePath(values) {
+        let d = "";
+        values.forEach((v, i) => {
+          if (v === null) return;
+          d += (d ? "L" : "M") + x(i).toFixed(1) + "," + y(v).toFixed(1) + " ";
+        });
+        return d.trim();
+      }
+
+      function bandPath(minVals, maxVals) {
+        let d = "", started = false;
+        for (let i = 0; i < DAYS; i++) {
+          if (maxVals[i] === null) continue;
+          d += (started ? "L" : "M") + x(i).toFixed(1) + "," + y(maxVals[i]).toFixed(1) + " ";
+          started = true;
+        }
+        for (let i = DAYS - 1; i >= 0; i--) {
+          if (minVals[i] === null) continue;
+          d += "L" + x(i).toFixed(1) + "," + y(minVals[i]).toFixed(1) + " ";
+        }
+        return d + "Z";
+      }
+
+      const parts = [];
+      for (let gv = Math.ceil(yMin / 5) * 5; gv <= yMax; gv += 5) {
+        parts.push(`<line x1="${padL}" y1="${y(gv)}" x2="${W - padR}" y2="${y(gv)}" stroke="#212b37"/>`);
+        parts.push(`<text x="2" y="${y(gv) + 4}" font-size="11" fill="#93a1ae">${gv}\u00B0</text>`);
+      }
+      ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"].forEach((m, i) => {
+        const dayIdx = Math.round((i * DAYS) / 12);
+        parts.push(`<text x="${x(dayIdx)}" y="${H - 6}" font-size="11" fill="#93a1ae">${m}</text>`);
+      });
+
+      [[seriesA, COLORS[0]], [seriesB, COLORS[1]]].forEach(([s, color]) => {
+        parts.push(`<path d="${bandPath(s.min, s.max)}" fill="${color}" fill-opacity="0.15" stroke="none"/>`);
+        parts.push(`<path d="${linePath(s.mean)}" fill="none" stroke="${color}" stroke-width="2"/>`);
+      });
+
+      svg.innerHTML = parts.join("\n");
+    }
+
+    // Difference table is built off each year's daily-mean series only (not
+    // separate min/max diffs) -- that's the one series both years always
+    // have, and keeps the table to 4 rows. Swap in seriesA.min/.max here if
+    // per-extreme diffs are ever needed.
+    function renderDiffTable(seriesA, seriesB, heatA, heatB) {
+      const statsA = TempUtils.stats(seriesA.mean);
+      const statsB = TempUtils.stats(seriesB.mean);
+      const temp = (v) => v.toFixed(1) + "\u00B0";
+      const count = (v) => v.toString();
+      const rows = [
+        ["Mean difference", statsA.mean, statsB.mean, temp],
+        ["Median difference", statsA.median, statsB.median, temp],
+        ["Maximum difference", statsA.max, statsB.max, temp],
+        ["Minimum difference", statsA.min, statsB.min, temp],
+        ["Heat days", heatA, heatB, count],
+      ];
+      diffBody.innerHTML = rows.map(([label, a, b, fmt]) => {
+        const diff = a - b;
+        const cls = diff > 0 ? "pos" : diff < 0 ? "neg" : "";
+        const sign = diff > 0 ? "+" : "";
+        return `<tr><td>${label}</td><td>${fmt(a)}</td><td>${fmt(b)}</td>` +
+                `<td class="${cls}">${sign}${fmt(diff)}</td></tr>`;
+      }).join("");
+    }
+
+    async function compare() {
+      statusEl.textContent = "Loading\u2026";
+      try {
+        const [yearA, yearB] = [yearASel.value, yearBSel.value];
+        const [byDayA, byDayB] = await Promise.all([fetchYear(yearA), fetchYear(yearB)]);
+        const smooth = avgToggle.classList.contains("on");
+        const maWindow = parseInt(maWindowInput.value, 10) || 7;
+        const heatThreshold = parseFloat(heatThresholdInput.value);
+        const seriesA = buildSeries(byDayA, smooth, maWindow);
+        const seriesB = buildSeries(byDayB, smooth, maWindow);
+        const heatA = countHeatDays(byDayA, heatThreshold);
+        const heatB = countHeatDays(byDayB, heatThreshold);
+        render(seriesA, seriesB);
+        renderDiffTable(seriesA, seriesB, heatA, heatB);
+        legendEl.innerHTML =
+                `<span><span class="swatch" style="background:${COLORS[0]}"></span>${yearA}</span>` +
+                `<span><span class="swatch" style="background:${COLORS[1]}"></span>${yearB}</span>`;
+        roYearA.textContent = yearA;
+        roYearB.textContent = yearB;
+        roSmooth.textContent = smooth ? `on \u00B7 ${maWindow}d` : "off";
+        statusEl.textContent = "";
+        statusEl.classList.remove("error");
+      } catch (err) {
+        statusEl.textContent = "Could not load data: " + err.message +
+                " (if this keeps failing, the GeoSphere API may be blocking direct browser requests \u2014 check the browser console).";
+        statusEl.classList.add("error");
+      }
+    }
+
+    document.getElementById("loadBtn").addEventListener("click", compare);
+    avgToggle.addEventListener("click", () => {
+      avgToggle.classList.toggle("on");
+      compare();
+    });
+    maWindowInput.addEventListener("change", compare);
+    heatThresholdInput.addEventListener("change", compare);
+    stationSel.addEventListener("change", () => {
+      STATION_ID = stationSel.value;
+      // yearCache is keyed by year only, on the assumption of one fixed
+      // station; switching stations invalidates every cached year.
+      Object.keys(yearCache).forEach((y) => delete yearCache[y]);
+      updateStationLabel();
+      compare();
+    });
+    loadStations().then(compare);
+  })();
+</script>
+</body>
+</html>
