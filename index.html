@@ -72,7 +72,7 @@
     .field label{ display:block; font-size:11px; letter-spacing:.08em; text-transform:uppercase; color:var(--text-dim); margin-bottom:7px; }
     .field select, .field input[type="number"]{
       background:var(--panel-2); border:1px solid var(--line); color:var(--text);
-      font-family:'JetBrains Mono',monospace; font-size:14px; padding:9px 11px; border-radius:7px; min-width:110px;
+      font-family:'JetBrains Mono',monospace; font-size:14px; padding:9px 11px; border-radius:7px; min-width:110px; max-width:100%;
     }
     .field input[type="number"]{ width:90px; min-width:0; }
     .field select:focus, .field input[type="number"]:focus{ outline:none; border-color:var(--accent-dim); }
@@ -117,7 +117,15 @@
 
     footer{ max-width:1180px; margin:0 auto; padding:0 clamp(16px,4vw,48px) 50px; color:var(--text-dim); font-size:12.5px; line-height:1.6; }
 
-    @media (max-width:560px){ .panel-row{ gap:16px; } th, td{ padding:8px 6px; } }
+    @media (max-width:560px){
+      .panel-row{ gap:16px; }
+      th, td{ padding:8px 6px; }
+      /* long station names can force a select wider than its flex item; let it fill the row instead */
+      .field{ min-width:0; flex:1 1 100%; }
+      .field select{ width:100%; }
+      /* reserve room so the eyebrow line doesn't run under the absolutely-positioned lang switch */
+      .eyebrow{ padding-right:56px; }
+    }
   </style>
 </head>
 <body>
@@ -128,7 +136,7 @@
       <button type="button" data-lang="en" class="active">EN</button><span>/</span><button type="button" data-lang="de">DE</button>
     </div>
     <div class="eyebrow"><span class="dot"></span> <span data-i18n="eyebrow">GeoSphere Austria · klima-v2-1d · daily station archive</span></div>
-    <h1 data-i18n="h1">Austria Historic Temperature Comparison</h1>
+    <h1 data-i18n="h1">Austria Historic Temperature Comparison</h1>^
     <p><span id="stationDesc">Station 105</span><span data-i18n="header_desc">, daily mean, min &amp; max. The shaded band spans each day's recorded minimum to maximum; the line running through it is the daily mean.</span></p>
   </header>
 </div>
@@ -221,6 +229,9 @@
       row_max: { en: "Maximum difference", de: "Maximaldifferenz" },
       row_min: { en: "Minimum difference", de: "Minimaldifferenz" },
       row_heat: { en: "Heat days", de: "HitzeTage" },
+      station_range: { en: "data", de: "Daten" },
+      no_data: { en: "No data recorded for this station in ", de: "Keine Daten für diese Station im Jahr " },
+      no_data_hint: { en: ". Pick a year within the station's range shown above.", de: " vorhanden. Bitte ein Jahr innerhalb des oben angezeigten Zeitraums w\u00e4hlen." },
     };
     let lang = "en";
     const t = (key) => I18N[key][lang];
@@ -234,6 +245,7 @@
       if (!btn || btn.dataset.lang === lang) return;
       lang = btn.dataset.lang;
       applyLang();
+      updateStationLabel(); // the " · data 1878–2026" suffix is language-dependent too
       compare(); // re-render status / smoothing readout / diff table labels in the new language
     });
 
@@ -258,11 +270,30 @@
     const roSmooth = document.getElementById("ro-smooth");
     const stationDesc = document.getElementById("stationDesc");
     const stationNames = {}; // station id -> name, filled by loadStations()
+    const stationRanges = {}; // station id -> {from, to} ISO dates, also from loadStations()
 
     function updateStationLabel() {
       const name = stationNames[STATION_ID];
+      const r = stationRanges[STATION_ID];
+      const range = r?.from && r?.to
+              ? ` \u00B7 ${t("station_range")} ${new Date(r.from).getUTCFullYear()}\u2013${new Date(r.to).getUTCFullYear()}`
+              : "";
       roStation.textContent = name ? `${name} (${STATION_ID})` : STATION_ID;
-      stationDesc.textContent = name ? `Station ${STATION_ID} (${name})` : `Station ${STATION_ID}`;
+      stationDesc.textContent = (name ? `Station ${STATION_ID} (${name})` : `Station ${STATION_ID}`) + range;
+    }
+
+    // Disables year options outside this station's valid_from/valid_to (from
+    // the metadata call below) so picking a year with no data isn't even
+    // possible, instead of finding out after a failed fetch.
+    function updateYearBounds() {
+      const r = stationRanges[STATION_ID];
+      const minY = r?.from ? new Date(r.from).getUTCFullYear() : 1900;
+      const maxY = r?.to ? new Date(r.to).getUTCFullYear() : thisYear;
+      [yearASel, yearBSel].forEach((sel) =>
+              [...sel.options].forEach((o) => (o.disabled = +o.value < minY || +o.value > maxY))
+      );
+      if (+yearASel.value < minY || +yearASel.value > maxY) yearASel.value = maxY;
+      if (+yearBSel.value < minY || +yearBSel.value > maxY) yearBSel.value = minY;
     }
 
     // One call at startup gets every valid station id + name for this dataset,
@@ -277,11 +308,19 @@
         const data = await res.json();
         const raw = data.stations || (data.features || []).map((f) => f.properties) || [];
         const stations = raw
-                .map((s) => ({ id: String(s.id ?? s.station_id ?? ""), name: s.name ?? s.station_name ?? "" }))
+                .map((s) => ({
+                  id: String(s.id ?? s.station_id ?? ""),
+                  name: s.name ?? s.station_name ?? "",
+                  from: s.valid_from,
+                  to: s.valid_to,
+                }))
                 .filter((s) => s.id)
                 .sort((a, b) => a.name.localeCompare(b.name));
         if (!stations.length) throw new Error("metadata: no stations in response");
-        stations.forEach((s) => (stationNames[s.id] = s.name));
+        stations.forEach((s) => {
+          stationNames[s.id] = s.name;
+          stationRanges[s.id] = { from: s.from, to: s.to };
+        });
         stationSel.innerHTML = "";
         stations.forEach((s) => stationSel.add(new Option(`${s.name} (${s.id})`, s.id)));
         stationSel.value = stationNames[STATION_ID] ? STATION_ID : stations[0].id;
@@ -293,6 +332,7 @@
         stationSel.add(new Option(`Station ${STATION_ID}`, STATION_ID));
       }
       updateStationLabel();
+      updateYearBounds();
     }
 
     const thisYear = new Date().getFullYear();
@@ -433,6 +473,17 @@
       try {
         const [yearA, yearB] = [yearASel.value, yearBSel.value];
         const [byDayA, byDayB] = await Promise.all([fetchYear(yearA), fetchYear(yearB)]);
+        // A year with zero rows breaks both the SVG band path (empty "Z" with
+        // no preceding "M") and the diff table (stats() returns null means).
+        // Catching it here once, before render/renderDiffTable run, avoids
+        // patching both of those separately for the same underlying cause.
+        const isEmptyYear = (byDay) => byDay.every((r) => r === null);
+        if (isEmptyYear(byDayA) || isEmptyYear(byDayB)) {
+          const missing = isEmptyYear(byDayA) ? yearA : yearB;
+          statusEl.textContent = t("no_data") + missing + t("no_data_hint");
+          statusEl.classList.add("error");
+          return;
+        }
         const smooth = avgToggle.classList.contains("on");
         const maWindow = parseInt(maWindowInput.value, 10) || 7;
         const heatThreshold = parseFloat(heatThresholdInput.value);
@@ -469,6 +520,7 @@
       // station; switching stations invalidates every cached year.
       Object.keys(yearCache).forEach((y) => delete yearCache[y]);
       updateStationLabel();
+      updateYearBounds();
       compare();
     });
     loadStations().then(compare);
