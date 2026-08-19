@@ -3,7 +3,13 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Station Readout — Austria Temperature Comparison</title>
+  <title>Austria Historic Temperature Comparison</title>
+  <meta name="description" content="Compare daily temperature, heat days and precipitation between any two years for Austrian weather stations, using GeoSphere Austria's historical climate data.">
+  <meta property="og:title" content="Austria Historic Temperature Comparison">
+  <meta property="og:description" content="Compare daily temperature, heat days and precipitation between any two years for Austrian weather stations.">
+  <meta property="og:type" content="website">
+  <meta name="twitter:card" content="summary">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>%F0%9F%8C%A1</text></svg>">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
   <style>
@@ -98,7 +104,8 @@
     .status{ margin-top:14px; font-family:'JetBrains Mono',monospace; font-size:12.5px; color:var(--text-dim); min-height:16px; }
     .status.error{ color:var(--bad); }
 
-    .chart-card{ background:var(--panel); border:1px solid var(--line); border-radius:var(--radius); padding:22px 22px 12px; margin-bottom:22px; }
+    .chart-card{ position:relative; background:var(--panel); border:1px solid var(--line); border-radius:var(--radius); padding:22px 22px 12px; margin-bottom:22px; }
+    .tooltip{ position:absolute; display:none; pointer-events:none; z-index:10; background:var(--panel-2); border:1px solid var(--line); border-radius:6px; padding:6px 10px; font-family:'JetBrains Mono',monospace; font-size:12px; line-height:1.5; color:var(--text); white-space:nowrap; }
     .chart-card-head{ display:flex; justify-content:space-between; align-items:flex-end; flex-wrap:wrap; gap:14px 22px; margin-bottom:14px; }
     .chart-card-head h2{ font-family:'Space Grotesk',sans-serif; font-size:16px; font-weight:600; margin:0; }
     .chart-card-head-title{ display:flex; flex-direction:column; gap:4px; }
@@ -186,6 +193,7 @@
       </div>
     </div>
     <svg id="chart" viewBox="0 0 900 450" xmlns="http://www.w3.org/2000/svg"></svg>
+    <div class="tooltip" id="tooltip"></div>
     <div class="legend" id="legend"></div>
   </div>
 
@@ -272,7 +280,8 @@
       compare(); // re-render status / smoothing readout / diff table labels in the new language
     });
 
-    let STATION_ID = "105"; // default; overridden once the station list loads
+    const urlParams = new URLSearchParams(location.search);
+    let STATION_ID = urlParams.get("station") || "105"; // default; overridden once the station list loads
     const ENDPOINT = "https://dataset.api.hub.geosphere.at/v1/station/historical/klima-v2-1d";
     const COLORS = ["#d98a4b", "#3a6ea5"]; // comparison year, baseline year
     const DAYS = 366; // fixed grid; leap years get a Feb-29 slot, others just leave it null
@@ -362,8 +371,8 @@
       yearASel.add(new Option(y, y));
       yearBSel.add(new Option(y, y));
     }
-    yearASel.value = 2026;
-    yearBSel.value = 1947;
+    yearASel.value = urlParams.get("yearA") || thisYear;
+    yearBSel.value = urlParams.get("yearB") || 1947;
 
     // Historical years never change once fetched, so cache by year, this is
     // what keeps usage under GeoSphere's 240/hr limit.
@@ -573,6 +582,14 @@
       }).join("");
     }
 
+    function updateUrl() {
+      const params = new URLSearchParams({ station: STATION_ID, yearA: yearASel.value, yearB: yearBSel.value });
+      history.replaceState(null, "", "?" + params.toString());
+    }
+
+    // Last successful render, read by the tooltip mousemove handler below.
+    let lastRender = null;
+
     async function compare() {
       statusEl.textContent = t("loading");
       try {
@@ -586,6 +603,7 @@
           const missing = isEmptyYear(byDayA) ? yearA : yearB;
           statusEl.textContent = t("no_data") + missing + t("no_data_hint");
           statusEl.classList.add("error");
+          lastRender = null;
           return;
         }
         const smooth = avgToggle.classList.contains("on");
@@ -611,6 +629,8 @@
           chartTitleEl.textContent = t("chart_h2");
         }
         renderDiffTable(seriesA, seriesB, byDayA, byDayB, heatA, heatB, tropicalA, tropicalB);
+        lastRender = { mode, byDayA, byDayB, yearA, yearB };
+        updateUrl();
 
         legendEl.innerHTML =
                 `<span><span class="swatch" style="background:${COLORS[0]}"></span>${yearA}</span>` +
@@ -625,6 +645,33 @@
         statusEl.classList.add("error");
       }
     }
+
+    const tooltipEl = document.getElementById("tooltip");
+    svg.addEventListener("mousemove", (e) => {
+      if (!lastRender || (lastRender.mode !== "temp" && lastRender.mode !== "precip")) {
+        tooltipEl.style.display = "none";
+        return;
+      }
+      const rect = svg.getBoundingClientRect();
+      const padL = 40, padR = 10, plotW = 900 - padL - padR;
+      const vbX = ((e.clientX - rect.left) / rect.width) * 900;
+      const i = Math.round(((vbX - padL) / plotW) * (DAYS - 1));
+      const rA = lastRender.byDayA[i + 1], rB = lastRender.byDayB[i + 1]; // byDay is 1-indexed by day-of-year
+      if (i < 0 || i >= DAYS || (!rA && !rB)) {
+        tooltipEl.style.display = "none";
+        return;
+      }
+      // Reference year 2000 (leap) matches the leap-aligned day-of-year grid used everywhere else.
+      const dateLabel = new Date(Date.UTC(2000, 0, i + 1)).toLocaleDateString(lang === "de" ? "de-AT" : "en-GB", { month: "short", day: "numeric" });
+      const fmt = (r) => r ? (lastRender.mode === "precip" ? `${(r.precip ?? 0).toFixed(1)} mm` : `${r.mean?.toFixed(1)}\u00B0`) : "\u2014";
+      tooltipEl.innerHTML = `<strong>${dateLabel}</strong><br>` +
+              `<span style="color:${COLORS[0]}">${lastRender.yearA}</span> ${fmt(rA)}<br>` +
+              `<span style="color:${COLORS[1]}">${lastRender.yearB}</span> ${fmt(rB)}`;
+      tooltipEl.style.display = "block";
+      tooltipEl.style.left = Math.min(e.clientX - rect.left + 14, rect.width - 130) + "px";
+      tooltipEl.style.top = (e.clientY - rect.top + 14) + "px";
+    });
+    svg.addEventListener("mouseleave", () => { tooltipEl.style.display = "none"; });
 
     document.getElementById("loadBtn").addEventListener("click", compare);
     avgToggle.addEventListener("click", () => {
