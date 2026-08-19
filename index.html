@@ -69,6 +69,7 @@
 
     .panel{ background:var(--panel); border:1px solid var(--line); border-radius:var(--radius); padding:20px 22px; margin-bottom:22px; }
     .panel-row{ display:flex; flex-wrap:wrap; align-items:flex-end; gap:22px; }
+    .panel-row + .panel-row{ margin-top:18px; }
     .field label{ display:block; font-size:11px; letter-spacing:.08em; text-transform:uppercase; color:var(--text-dim); margin-bottom:7px; }
     .field select, .field input[type="number"]{
       background:var(--panel-2); border:1px solid var(--line); color:var(--text);
@@ -98,9 +99,11 @@
     .status.error{ color:var(--bad); }
 
     .chart-card{ background:var(--panel); border:1px solid var(--line); border-radius:var(--radius); padding:22px 22px 12px; margin-bottom:22px; }
-    .chart-card-head{ display:flex; justify-content:space-between; align-items:baseline; flex-wrap:wrap; gap:10px; margin-bottom:14px; }
+    .chart-card-head{ display:flex; justify-content:space-between; align-items:flex-end; flex-wrap:wrap; gap:14px 22px; margin-bottom:14px; }
     .chart-card-head h2{ font-family:'Space Grotesk',sans-serif; font-size:16px; font-weight:600; margin:0; }
-    .chart-card-head span{ font-size:12px; color:var(--text-dim); }
+    .chart-card-head-title{ display:flex; flex-direction:column; gap:4px; }
+    .chart-card-head-title span{ font-size:12px; color:var(--text-dim); }
+    .chart-card-head .field{ margin-left:auto; }
     svg{ width:100%; height:auto; display:block; }
     .legend{ display:flex; gap:1.5rem; margin-top:.6rem; font-size:.85rem; color:var(--text-dim); font-family:'JetBrains Mono',monospace; }
     .swatch{ display:inline-block; width:10px; height:10px; margin-right:.4rem; vertical-align:middle; border-radius:50%; }
@@ -120,10 +123,9 @@
     @media (max-width:560px){
       .panel-row{ gap:16px; }
       th, td{ padding:8px 6px; }
-      /* long station names can force a select wider than its flex item; let it fill the row instead */
       .field{ min-width:0; flex:1 1 100%; }
       .field select{ width:100%; }
-      /* reserve room so the eyebrow line doesn't run under the absolutely-positioned lang switch */
+      .chart-card-head .field{ margin-left:0; }
       .eyebrow{ padding-right:56px; }
     }
   </style>
@@ -136,7 +138,7 @@
       <button type="button" data-lang="en" class="active">EN</button><span>/</span><button type="button" data-lang="de">DE</button>
     </div>
     <div class="eyebrow"><span class="dot"></span> <span data-i18n="eyebrow">GeoSphere Austria · klima-v2-1d · daily station archive</span></div>
-    <h1 data-i18n="h1">Austria Historic Temperature Comparison</h1>^
+    <h1 data-i18n="h1">Austria Historic Temperature Comparison</h1>
     <p><span id="stationDesc">Station 105</span><span data-i18n="header_desc">, daily mean, min &amp; max. The shaded band spans each day's recorded minimum to maximum; the line running through it is the daily mean.</span></p>
   </header>
 </div>
@@ -155,9 +157,12 @@
       <div class="field"><label for="station" data-i18n="lbl_station">Station</label><select id="station"></select></div>
       <div class="field"><label for="yearA" data-i18n="lbl_yearA">Comparison year</label><select id="yearA"></select></div>
       <div class="field"><label for="yearB" data-i18n="lbl_yearB">Baseline year</label><select id="yearB"></select></div>
+      <button class="primary" id="loadBtn" data-i18n="btn_compare">Compare</button>
+    </div>
+    <div class="panel-row">
       <div class="field"><label for="maWindow" data-i18n="lbl_ma">MA window (days)</label><input type="number" id="maWindow" value="7" min="1" max="61"></div>
       <div class="field"><label for="heatThreshold" data-i18n="lbl_heat">Heat day threshold (&deg;C)</label><input type="number" id="heatThreshold" value="30"></div>
-      <button class="primary" id="loadBtn" data-i18n="btn_compare">Compare</button>
+      <div class="field"><label for="tropicalThreshold" data-i18n="lbl_tropical">Tropical night threshold (&deg;C)</label><input type="number" id="tropicalThreshold" value="20"></div>
       <div class="toggle-wrap" style="margin-left:auto;">
         <div class="toggle-label"><span data-i18n="toggle_title">Moving average</span><small data-i18n="toggle_sub">smooths the mean, min &amp; max curves</small></div>
         <div class="rocker" id="avgToggle"><div class="knob"></div></div>
@@ -168,8 +173,17 @@
 
   <div class="chart-card">
     <div class="chart-card-head">
-      <h2 data-i18n="chart_h2">Daily mean, enclosed by daily min–max</h2>
-      <span data-i18n="chart_sub">Jan 1 – Dec 31, aligned by calendar day</span>
+      <div class="chart-card-head-title">
+        <h2 id="chartTitle" data-i18n="chart_h2">Daily mean, enclosed by daily min–max</h2>
+        <span data-i18n="chart_sub">Jan 1 – Dec 31, aligned by calendar day</span>
+      </div>
+      <div class="field"><label for="chartMode" data-i18n="lbl_chartmode">Chart</label>
+        <select id="chartMode">
+          <option value="temp" data-i18n="chart_mode_temp">Temperature</option>
+          <option value="precip" data-i18n="chart_mode_precip">Precipitation</option>
+          <option value="days" data-i18n="chart_mode_days">Heat &amp; tropical days</option>
+        </select>
+      </div>
     </div>
     <svg id="chart" viewBox="0 0 900 450" xmlns="http://www.w3.org/2000/svg"></svg>
     <div class="legend" id="legend"></div>
@@ -205,10 +219,17 @@
       lbl_smooth: { en: "Smoothing", de: "Gl\u00e4ttung" },
       lbl_ma: { en: "MA window (days)", de: "GD Fenster (Tage)" },
       lbl_heat: { en: "Heat day threshold (\u00b0C)", de: "Hitzetag-Schwelle (\u00b0C)" },
+      lbl_tropical: { en: "Tropical night threshold (\u00b0C)", de: "Tropennacht-Schwelle (\u00b0C)" },
+      lbl_chartmode: { en: "Chart", de: "Diagramm" },
+      chart_mode_temp: { en: "Temperature", de: "Temperatur" },
+      chart_mode_precip: { en: "Precipitation", de: "Niederschlag" },
+      chart_mode_days: { en: "Heat & tropical days", de: "Hitze- & Tropennächte" },
       btn_compare: { en: "Compare", de: "Vergleichen" },
       toggle_title: { en: "Moving average", de: "Gleitender Durchschnitt" },
       toggle_sub: { en: "smooths the mean, min & max curves", de: "gl\u00e4ttet Mittel-, Min- und Max-Kurven" },
       chart_h2: { en: "Daily mean, enclosed by daily min\u2013max", de: "Tagesmittel, umschlossen von Tages-Min/Max" },
+      chart_h2_precip: { en: "Daily precipitation", de: "T\u00e4glicher Niederschlag" },
+      chart_h2_days: { en: "Heat days & tropical nights", de: "Hitzetage & Tropenn\u00e4chte" },
       chart_sub: { en: "Jan 1 \u2013 Dec 31, aligned by calendar day", de: "1. Jan \u2013 31. Dez, nach Kalendertag ausgerichtet" },
       diff_h2: { en: "Comparison \u2212 Baseline", de: "Vergleich \u2212 Basis" },
       diff_sub: { en: "Differences over each year's daily mean temperature (\u00b0C)", de: "Differenzen der Tagesmitteltemperatur beider Jahre (\u00b0C)" },
@@ -228,7 +249,9 @@
       row_median: { en: "Median difference", de: "Mediandifferenz" },
       row_max: { en: "Maximum difference", de: "Maximaldifferenz" },
       row_min: { en: "Minimum difference", de: "Minimaldifferenz" },
-      row_heat: { en: "Heat days", de: "HitzeTage" },
+      row_heat: { en: "Heat days", de: "Hitzetage" },
+      row_tropical: { en: "Tropical nights", de: "Tropennächte" },
+      row_precip: { en: "Avg. daily precipitation", de: "Mittlerer Tagesniederschlag" },
       station_range: { en: "data", de: "Daten" },
       no_data: { en: "No data recorded for this station in ", de: "Keine Daten für diese Station im Jahr " },
       no_data_hint: { en: ". Pick a year within the station's range shown above.", de: " vorhanden. Bitte ein Jahr innerhalb des oben angezeigten Zeitraums w\u00e4hlen." },
@@ -245,11 +268,11 @@
       if (!btn || btn.dataset.lang === lang) return;
       lang = btn.dataset.lang;
       applyLang();
-      updateStationLabel(); // the " · data 1878–2026" suffix is language-dependent too
+      updateStationLabel();
       compare(); // re-render status / smoothing readout / diff table labels in the new language
     });
 
-    let STATION_ID = "105"; // default; overridden once the station list loads (see loadStations)
+    let STATION_ID = "105"; // default; overridden once the station list loads
     const ENDPOINT = "https://dataset.api.hub.geosphere.at/v1/station/historical/klima-v2-1d";
     const COLORS = ["#d98a4b", "#3a6ea5"]; // comparison year, baseline year
     const DAYS = 366; // fixed grid; leap years get a Feb-29 slot, others just leave it null
@@ -263,14 +286,17 @@
     const avgToggle = document.getElementById("avgToggle");
     const maWindowInput = document.getElementById("maWindow");
     const heatThresholdInput = document.getElementById("heatThreshold");
+    const tropicalThresholdInput = document.getElementById("tropicalThreshold");
+    const chartModeSel = document.getElementById("chartMode");
+    const chartTitleEl = document.getElementById("chartTitle");
     const diffBody = document.querySelector("#diffTable tbody");
     const roStation = document.getElementById("ro-station");
     const roYearA = document.getElementById("ro-yearA");
     const roYearB = document.getElementById("ro-yearB");
     const roSmooth = document.getElementById("ro-smooth");
     const stationDesc = document.getElementById("stationDesc");
-    const stationNames = {}; // station id -> name, filled by loadStations()
-    const stationRanges = {}; // station id -> {from, to} ISO dates, also from loadStations()
+    const stationNames = {};
+    const stationRanges = {};
 
     function updateStationLabel() {
       const name = stationNames[STATION_ID];
@@ -283,8 +309,7 @@
     }
 
     // Disables year options outside this station's valid_from/valid_to (from
-    // the metadata call below) so picking a year with no data isn't even
-    // possible, instead of finding out after a failed fetch.
+    // the metadata call).
     function updateYearBounds() {
       const r = stationRanges[STATION_ID];
       const minY = r?.from ? new Date(r.from).getUTCFullYear() : 1900;
@@ -297,10 +322,7 @@
     }
 
     // One call at startup gets every valid station id + name for this dataset,
-    // straight from the API's own /metadata endpoint -- no hardcoded list to
-    // go stale. The exact property names aren't documented publicly beyond
-    // "id"/"name" (seen via the API's R client), so we fall back across the
-    // likely variants rather than assume a single shape.
+    // straight from the API's own /metadata endpoint.
     async function loadStations() {
       try {
         const res = await fetch(`${ENDPOINT}/metadata`);
@@ -343,27 +365,22 @@
     yearASel.value = 2026;
     yearBSel.value = 1947;
 
-    // Historical years never change once fetched, so cache by year -- this is
-    // what actually keeps us under GeoSphere's 240/hr limit, since without it
-    // every smoothing/threshold tweak below would silently refetch both years.
+    // Historical years never change once fetched, so cache by year, this is
+    // what keeps usage under GeoSphere's 240/hr limit.
     const yearCache = {};
     async function fetchYear(year) {
       if (yearCache[year]) return yearCache[year];
-      const url = `${ENDPOINT}?station_ids=${STATION_ID}&parameters=tl_mittel,tlmax,tlmin` +
+      const url = `${ENDPOINT}?station_ids=${STATION_ID}&parameters=tl_mittel,tlmax,tlmin,rr` +
               `&start=${year}-01-01&end=${year}-12-31&output_format=csv`;
       const res = await fetch(url, { headers: { Accept: "text/csv" } });
       if (res.status === 429) {
-        // Docs expose ratelimit-reset (seconds) for exactly this -- one retry
-        // is enough here since we're not hammering the API, just occasionally
-        // racing our own concurrent yearA/yearB fetches.
         const waitSec = parseInt(res.headers.get("ratelimit-reset"), 10) || 5;
         await new Promise((r) => setTimeout(r, waitSec * 1000));
         return fetchYear(year);
       }
       if (!res.ok) throw new Error(`${year}: HTTP ${res.status}`);
       const rows = TempUtils.parseCsv(await res.text());
-      // Index by day-of-year (see temp-utils.js for why we align on the
-      // calendar day, not the raw row order). Non-leap Dec 31 simply never
+      // Index by day-of-year. Non-leap Dec 31 simply never
       // fills slot 366, and the chart draws null gaps as breaks, not zeros.
       const byDay = new Array(DAYS + 1).fill(null);
       for (const r of rows) byDay[TempUtils.dayOfYear(r.time)] = r;
@@ -385,13 +402,21 @@
       };
     }
 
-    // Heat days always count against the raw daily max, not the smoothed
-    // curve -- smoothing would blur which side of the threshold a day fell on.
-    function countHeatDays(byDay, threshold) {
-      return toSeries(byDay, "max").filter((v) => v !== null && v > threshold).length;
+    // Heat days / tropical nights always count against the raw daily
+    // max/min, not the smoothed curve. One function covers both: heat days
+    // threshold the daily max, tropical nights threshold the daily min.
+    function countDaysAbove(byDay, field, threshold) {
+      return toSeries(byDay, field).filter((v) => v !== null && v > threshold).length;
     }
 
-    function render(seriesA, seriesB) {
+    function monthTicks(x) {
+      return ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"].map((m, i) => {
+        const dayIdx = Math.round((i * DAYS) / 12);
+        return `<text x="${x(dayIdx)}" y="444" font-size="11" fill="#93a1ae">${m}</text>`;
+      }).join("\n");
+    }
+
+    function renderTempChart(seriesA, seriesB) {
       const W = 900, H = 450, padL = 40, padR = 10, padT = 10, padB = 25;
       const plotW = W - padL - padR, plotH = H - padT - padB;
 
@@ -430,10 +455,7 @@
         parts.push(`<line x1="${padL}" y1="${y(gv)}" x2="${W - padR}" y2="${y(gv)}" stroke="#212b37"/>`);
         parts.push(`<text x="2" y="${y(gv) + 4}" font-size="11" fill="#93a1ae">${gv}\u00B0</text>`);
       }
-      ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"].forEach((m, i) => {
-        const dayIdx = Math.round((i * DAYS) / 12);
-        parts.push(`<text x="${x(dayIdx)}" y="${H - 6}" font-size="11" fill="#93a1ae">${m}</text>`);
-      });
+      parts.push(monthTicks(x));
 
       [[seriesA, COLORS[0]], [seriesB, COLORS[1]]].forEach(([s, color]) => {
         parts.push(`<path d="${bandPath(s.min, s.max)}" fill="${color}" fill-opacity="0.15" stroke="none"/>`);
@@ -443,21 +465,104 @@
       svg.innerHTML = parts.join("\n");
     }
 
-    // Difference table is built off each year's daily-mean series only (not
-    // separate min/max diffs) -- that's the one series both years always
-    // have, and keeps the table to 4 rows. Swap in seriesA.min/.max here if
-    // per-extreme diffs are ever needed.
-    function renderDiffTable(seriesA, seriesB, heatA, heatB) {
+    // Precipitation as grouped daily bars, rain is a sum,
+    // not a continuous quantity. Uses raw daily totals.
+    function renderPrecipChart(byDayA, byDayB) {
+      const W = 900, H = 450, padL = 40, padR = 10, padT = 10, padB = 25;
+      const plotW = W - padL - padR, plotH = H - padT - padB, bottom = padT + plotH;
+      const precipA = toSeries(byDayA, "precip"), precipB = toSeries(byDayB, "precip");
+      const maxV = Math.max(1, ...[...precipA, ...precipB].filter((v) => v !== null));
+      const x = (i) => padL + (i / (DAYS - 1)) * plotW;
+      const y = (v) => bottom - (v / maxV) * plotH;
+      const step = Math.max(1, Math.ceil(maxV / 5));
+      const barW = Math.max(0.6, plotW / DAYS / 2 - 0.3);
+
+      const parts = [];
+      for (let gv = 0; gv <= maxV; gv += step) {
+        parts.push(`<line x1="${padL}" y1="${y(gv)}" x2="${W - padR}" y2="${y(gv)}" stroke="#212b37"/>`);
+        parts.push(`<text x="2" y="${y(gv) + 4}" font-size="11" fill="#93a1ae">${gv}</text>`);
+      }
+      parts.push(monthTicks(x));
+      [[precipA, COLORS[0], -barW], [precipB, COLORS[1], 0]].forEach(([series, color, off]) => {
+        series.forEach((v, i) => {
+          if (!v) return; // null or 0mm -- nothing to draw
+          parts.push(`<rect x="${(x(i) + off).toFixed(1)}" y="${y(v).toFixed(1)}" width="${barW.toFixed(1)}" height="${(bottom - y(v)).toFixed(1)}" fill="${color}" fill-opacity="0.8"/>`);
+        });
+      });
+      svg.innerHTML = parts.join("\n");
+    }
+
+    // Heat days / tropical nights are boolean per-day flags; here they're
+    // bucketed into monthly counts and drawn as grouped bars so year-over-year magnitude reads directly,
+    // while the monthly grouping still shows seasonal shape.
+    // Note: month boundaries use a fixed non-leap calendar (day-of-year
+    // index only), so in leap years the bucket boundaries can be off by up
+    // to a day around Feb/Mar -- fine for a monthly count, not day-exact.
+    const MONTH_STARTS = [0,31,59,90,120,151,181,212,243,273,304,334];
+    function monthOfDay(i) {
+      for (let m = 11; m >= 0; m--) if (i >= MONTH_STARTS[m]) return m;
+    }
+    function monthCounts(byDay, field, threshold) {
+      const counts = new Array(12).fill(0);
+      toSeries(byDay, field).forEach((v, i) => { if (v !== null && v > threshold) counts[monthOfDay(i)]++; });
+      return counts;
+    }
+
+    function renderDaysChart(byDayA, byDayB, heatThreshold, tropicalThreshold) {
+      const W = 900, H = 450, padL = 40, padR = 10, padT = 10, padB = 25;
+      const plotW = W - padL - padR, plotH = H - padT - padB;
+      const bandH = (plotH - 40) / 2; // 2 bands (heat, tropical), 20px gap
+      const x = (m) => padL + ((m + 0.5) / 12) * plotW;
+      const barW = Math.max(0.6, plotW / 12 / 2 - 2);
+
+      function band(bandTop, countsA, countsB, label) {
+        const maxV = Math.max(1, ...countsA, ...countsB);
+        const step = Math.max(1, Math.ceil(maxV / 4));
+        const bottom = bandTop + bandH;
+        const y = (v) => bottom - (v / maxV) * bandH;
+        const parts = [`<text x="${padL}" y="${bandTop - 4}" font-size="11" fill="#93a1ae">${label}</text>`];
+        for (let gv = 0; gv <= maxV; gv += step) {
+          parts.push(`<line x1="${padL}" y1="${y(gv)}" x2="${W - padR}" y2="${y(gv)}" stroke="#212b37"/>`);
+          parts.push(`<text x="2" y="${y(gv) + 4}" font-size="11" fill="#93a1ae">${gv}</text>`);
+        }
+        [[countsA, COLORS[0], -barW], [countsB, COLORS[1], 0]].forEach(([counts, color, off]) => {
+          counts.forEach((v, m) => {
+            if (!v) return;
+            parts.push(`<rect x="${(x(m) + off).toFixed(1)}" y="${y(v).toFixed(1)}" width="${barW.toFixed(1)}" height="${(bottom - y(v)).toFixed(1)}" fill="${color}" fill-opacity="0.8"/>`);
+          });
+        });
+        return parts.join("\n");
+      }
+
+      const heatTop = padT + 14, tropTop = heatTop + bandH + 20;
+      const parts = [
+        band(heatTop, monthCounts(byDayA, "max", heatThreshold), monthCounts(byDayB, "max", heatThreshold), `${t("row_heat")} > ${heatThreshold}\u00B0`),
+        band(tropTop, monthCounts(byDayA, "min", tropicalThreshold), monthCounts(byDayB, "min", tropicalThreshold), `${t("row_tropical")} > ${tropicalThreshold}\u00B0`),
+        ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"]
+                .map((mo, m) => `<text x="${x(m).toFixed(1)}" y="444" font-size="11" fill="#93a1ae">${mo}</text>`).join("\n"),
+      ];
+      svg.innerHTML = parts.join("\n");
+    }
+
+    // Difference table is built off each year's daily-mean series for the
+    // temperature rows, plus raw heat/tropical day counts and a raw precipitation total.
+    function renderDiffTable(seriesA, seriesB, byDayA, byDayB, heatA, heatB, tropicalA, tropicalB) {
       const statsA = TempUtils.stats(seriesA.mean);
       const statsB = TempUtils.stats(seriesB.mean);
+      // Average per recorded day -- a raw sum would make
+      // the current year look artificially dry against a complete one.
+      const precipAvg = (byDay) => TempUtils.stats(toSeries(byDay, "precip")).mean ?? 0;
       const temp = (v) => v.toFixed(1) + "\u00B0";
       const count = (v) => v.toString();
+      const mm = (v) => v.toFixed(2) + " mm";
       const rows = [
         [t("row_mean"), statsA.mean, statsB.mean, temp],
         [t("row_median"), statsA.median, statsB.median, temp],
         [t("row_max"), statsA.max, statsB.max, temp],
         [t("row_min"), statsA.min, statsB.min, temp],
         [t("row_heat"), heatA, heatB, count],
+        [t("row_tropical"), tropicalA, tropicalB, count],
+        [t("row_precip"), precipAvg(byDayA), precipAvg(byDayB), mm],
       ];
       diffBody.innerHTML = rows.map(([label, a, b, fmt]) => {
         const diff = a - b;
@@ -475,8 +580,7 @@
         const [byDayA, byDayB] = await Promise.all([fetchYear(yearA), fetchYear(yearB)]);
         // A year with zero rows breaks both the SVG band path (empty "Z" with
         // no preceding "M") and the diff table (stats() returns null means).
-        // Catching it here once, before render/renderDiffTable run, avoids
-        // patching both of those separately for the same underlying cause.
+        // Catching it here once, before render/renderDiffTable run.
         const isEmptyYear = (byDay) => byDay.every((r) => r === null);
         if (isEmptyYear(byDayA) || isEmptyYear(byDayB)) {
           const missing = isEmptyYear(byDayA) ? yearA : yearB;
@@ -487,12 +591,27 @@
         const smooth = avgToggle.classList.contains("on");
         const maWindow = parseInt(maWindowInput.value, 10) || 7;
         const heatThreshold = parseFloat(heatThresholdInput.value);
+        const tropicalThreshold = parseFloat(tropicalThresholdInput.value);
         const seriesA = buildSeries(byDayA, smooth, maWindow);
         const seriesB = buildSeries(byDayB, smooth, maWindow);
-        const heatA = countHeatDays(byDayA, heatThreshold);
-        const heatB = countHeatDays(byDayB, heatThreshold);
-        render(seriesA, seriesB);
-        renderDiffTable(seriesA, seriesB, heatA, heatB);
+        const heatA = countDaysAbove(byDayA, "max", heatThreshold);
+        const heatB = countDaysAbove(byDayB, "max", heatThreshold);
+        const tropicalA = countDaysAbove(byDayA, "min", tropicalThreshold);
+        const tropicalB = countDaysAbove(byDayB, "min", tropicalThreshold);
+
+        const mode = chartModeSel.value;
+        if (mode === "precip") {
+          renderPrecipChart(byDayA, byDayB);
+          chartTitleEl.textContent = t("chart_h2_precip");
+        } else if (mode === "days") {
+          renderDaysChart(byDayA, byDayB, heatThreshold, tropicalThreshold);
+          chartTitleEl.textContent = t("chart_h2_days");
+        } else {
+          renderTempChart(seriesA, seriesB);
+          chartTitleEl.textContent = t("chart_h2");
+        }
+        renderDiffTable(seriesA, seriesB, byDayA, byDayB, heatA, heatB, tropicalA, tropicalB);
+
         legendEl.innerHTML =
                 `<span><span class="swatch" style="background:${COLORS[0]}"></span>${yearA}</span>` +
                 `<span><span class="swatch" style="background:${COLORS[1]}"></span>${yearB}</span>`;
@@ -514,6 +633,8 @@
     });
     maWindowInput.addEventListener("change", compare);
     heatThresholdInput.addEventListener("change", compare);
+    tropicalThresholdInput.addEventListener("change", compare);
+    chartModeSel.addEventListener("change", compare);
     stationSel.addEventListener("change", () => {
       STATION_ID = stationSel.value;
       // yearCache is keyed by year only, on the assumption of one fixed

@@ -12,11 +12,20 @@
     if (!lines.length) return [];
     const header = lines[0].split(",");
     const col = (name) => header.indexOf(name);
-    const timeIdx = col("time"), meanIdx = col("tl_mittel"), maxIdx = col("tlmax"), minIdx = col("tlmin");
+    const timeIdx = col("time"), meanIdx = col("tl_mittel"), maxIdx = col("tlmax"), minIdx = col("tlmin"), rrIdx = col("rr");
     const num = (v) => (v === "" || v === undefined ? null : parseFloat(v)); // empty cell = missing reading, not 0
+    // rr: -1 = no precipitation (API sentinel), 0 = less than 0.1mm -- both
+    // are "no rain", but -1 is not a real negative amount, so it's mapped to 0.
+    const precip = (v) => { const n = num(v); return n === -1 ? 0 : n; };
     return lines.slice(1).map((line) => {
       const cells = line.split(",");
-      return { time: cells[timeIdx], mean: num(cells[meanIdx]), max: num(cells[maxIdx]), min: num(cells[minIdx]) };
+      return {
+        time: cells[timeIdx],
+        mean: num(cells[meanIdx]),
+        max: num(cells[maxIdx]),
+        min: num(cells[minIdx]),
+        precip: precip(cells[rrIdx]),
+      };
     });
   }
 
