@@ -160,6 +160,12 @@
   </div>
 
   <div class="panel">
+    <div class="panel-row" id="presets">
+      <button type="button" data-preset="thisyear1900" data-i18n="preset_thisyear">This year vs 1900</button>
+      <button type="button" data-preset="drought1947" data-i18n="preset_1947">1947 drought vs today</button>
+      <button type="button" data-preset="heatwave2003" data-i18n="preset_2003">2003 heatwave vs 1965</button>
+      <button type="button" data-preset="extremes" data-i18n="preset_extremes">Hottest vs coldest on record</button>
+    </div>
     <div class="panel-row">
       <div class="field"><label for="station" data-i18n="lbl_station">Station</label><select id="station"></select></div>
       <div class="field"><label for="yearA" data-i18n="lbl_yearA">Comparison year</label><select id="yearA"></select></div>
@@ -263,6 +269,12 @@
       station_range: { en: "data", de: "Daten" },
       no_data: { en: "No data recorded for this station in ", de: "Keine Daten für diese Station im Jahr " },
       no_data_hint: { en: ". Pick a year within the station's range shown above.", de: " vorhanden. Bitte ein Jahr innerhalb des oben angezeigten Zeitraums w\u00e4hlen." },
+      preset_thisyear: { en: "This year vs 1900", de: "Dieses Jahr vs 1900" },
+      preset_1947: { en: "1947 drought vs today", de: "D\u00fcrre 1947 vs heute" },
+      preset_2003: { en: "2003 heatwave vs 1965", de: "Hitzewelle 2003 vs 1965" },
+      preset_extremes: { en: "Hottest vs coldest on record", de: "W\u00e4rmstes vs k\u00e4ltestes Jahr" },
+      preset_scanning: { en: "Scanning station history\u2026", de: "Durchsuche Stationsverlauf\u2026" },
+      preset_extremes_hint: { en: "Scans every year on record for this station \u2014 long histories may hit GeoSphere's 240 requests/hour limit.", de: "Durchsucht jedes verf\u00fcgbare Jahr dieser Station \u2014 bei langer Historie kann GeoSpheres Limit von 240 Anfragen/Stunde erreicht werden." },
     };
     let lang = "en";
     const t = (key) => I18N[key][lang];
@@ -270,6 +282,7 @@
       document.documentElement.lang = lang;
       document.querySelectorAll("[data-i18n]").forEach((el) => (el.textContent = t(el.dataset.i18n)));
       document.querySelectorAll("#langSwitch button").forEach((b) => b.classList.toggle("active", b.dataset.lang === lang));
+      document.querySelector('[data-preset="extremes"]').title = t("preset_extremes_hint");
     }
     document.getElementById("langSwitch").addEventListener("click", (e) => {
       const btn = e.target.closest("button[data-lang]");
@@ -377,8 +390,15 @@
     // Historical years never change once fetched, so cache by year, this is
     // what keeps usage under GeoSphere's 240/hr limit.
     const yearCache = {};
+    let lastFetchAt = 0; // shared pacing gate, see fetchYear
     async function fetchYear(year) {
       if (yearCache[year]) return yearCache[year];
+      // Proactively space requests ~210ms apart (~4.7/sec, under GeoSphere's
+      // 5/sec cap) so bursty callers like the extremes preset don't trip the
+      // 429 the 429-handler below is only a backstop for.
+      const wait = 210 - (Date.now() - lastFetchAt);
+      if (wait > 0) await new Promise((r) => setTimeout(r, wait));
+      lastFetchAt = Date.now();
       const url = `${ENDPOINT}?station_ids=${STATION_ID}&parameters=tl_mittel,tlmax,tlmin,rr` +
               `&start=${year}-01-01&end=${year}-12-31&output_format=csv`;
       const res = await fetch(url, { headers: { Accept: "text/csv" } });
@@ -504,12 +524,8 @@
     // Heat days / tropical nights are boolean per-day flags; here they're
     // bucketed into monthly counts and drawn as grouped bars so year-over-year magnitude reads directly,
     // while the monthly grouping still shows seasonal shape.
-    // Note: month boundaries use a fixed non-leap calendar (day-of-year
-    // index only), so in leap years the bucket boundaries can be off by up
-    // to a day around Feb/Mar -- fine for a monthly count, not day-exact.
-    const MONTH_STARTS = [0,31,59,90,120,151,181,212,243,273,304,334];
     function monthOfDay(i) {
-      for (let m = 11; m >= 0; m--) if (i >= MONTH_STARTS[m]) return m;
+      for (let m = 11; m >= 0; m--) if (i >= TempUtils.MONTH_STARTS[m]) return m;
     }
     function monthCounts(byDay, field, threshold) {
       const counts = new Array(12).fill(0);
@@ -520,7 +536,9 @@
     function renderDaysChart(byDayA, byDayB, heatThreshold, tropicalThreshold) {
       const W = 900, H = 450, padL = 40, padR = 10, padT = 10, padB = 25;
       const plotW = W - padL - padR, plotH = H - padT - padB;
-      const bandH = (plotH - 40) / 2; // 2 bands (heat, tropical), 20px gap
+      const bandGap = 46; // vertical space between bands, must clear the top band's own label (-4px) and zero line
+      const monthAxisClearance = 20; // keep the tropical band's bottom clear of the month labels drawn at y=444
+      const bandH = (plotH - bandGap - monthAxisClearance) / 2;
       const x = (m) => padL + ((m + 0.5) / 12) * plotW;
       const barW = Math.max(0.6, plotW / 12 / 2 - 2);
 
@@ -543,7 +561,7 @@
         return parts.join("\n");
       }
 
-      const heatTop = padT + 14, tropTop = heatTop + bandH + 20;
+      const heatTop = padT + 14, tropTop = heatTop + bandH + bandGap;
       const parts = [
         band(heatTop, monthCounts(byDayA, "max", heatThreshold), monthCounts(byDayB, "max", heatThreshold), `${t("row_heat")} > ${heatThreshold}\u00B0`),
         band(tropTop, monthCounts(byDayA, "min", tropicalThreshold), monthCounts(byDayB, "min", tropicalThreshold), `${t("row_tropical")} > ${tropicalThreshold}\u00B0`),
@@ -558,8 +576,7 @@
     function renderDiffTable(seriesA, seriesB, byDayA, byDayB, heatA, heatB, tropicalA, tropicalB) {
       const statsA = TempUtils.stats(seriesA.mean);
       const statsB = TempUtils.stats(seriesB.mean);
-      // Average per recorded day -- a raw sum would make
-      // the current year look artificially dry against a complete one.
+      // Average per recorded day
       const precipAvg = (byDay) => TempUtils.stats(toSeries(byDay, "precip")).mean ?? 0;
       const temp = (v) => v.toFixed(1) + "\u00B0";
       const count = (v) => v.toString();
@@ -587,7 +604,7 @@
       history.replaceState(null, "", "?" + params.toString());
     }
 
-    // Last successful render, read by the tooltip mousemove handler below.
+    // Last successful render, read by the tooltip mousemove handler.
     let lastRender = null;
 
     async function compare() {
@@ -607,7 +624,7 @@
           return;
         }
         const smooth = avgToggle.classList.contains("on");
-        const maWindow = parseInt(maWindowInput.value, 10) || 7;
+        const maWindow = Math.max(1, parseInt(maWindowInput.value, 10) || 1);
         const heatThreshold = parseFloat(heatThresholdInput.value);
         const tropicalThreshold = parseFloat(tropicalThresholdInput.value);
         const seriesA = buildSeries(byDayA, smooth, maWindow);
@@ -673,6 +690,47 @@
     });
     svg.addEventListener("mouseleave", () => { tooltipEl.style.display = "none"; });
 
+    const YEAR_PRESETS = {
+      thisyear1900: [thisYear, 1900],
+      drought1947: [thisYear, 1947],
+      heatwave2003: [2003, 1965],
+    };
+    document.getElementById("presets").addEventListener("click", async (e) => {
+      const btn = e.target.closest("button[data-preset]");
+      if (!btn) return;
+
+      if (YEAR_PRESETS[btn.dataset.preset]) {
+        [yearASel.value, yearBSel.value] = YEAR_PRESETS[btn.dataset.preset];
+        compare();
+        return;
+      }
+
+      // extremes: walk every year in the station's valid range through the
+      // daily endpoint and keep the hottest/coldest mean. fetchYear paces
+      // itself under the 5 req/sec limit.
+      btn.disabled = true;
+      statusEl.textContent = t("preset_scanning");
+      const r = stationRanges[STATION_ID];
+      const from = r?.from ? new Date(r.from).getUTCFullYear() : 1900;
+      const to = r?.to ? new Date(r.to).getUTCFullYear() : thisYear;
+      let hottest = null, coldest = null;
+      for (let y = from; y <= to; y++) {
+        try {
+          const byDay = await fetchYear(y);
+          const mean = TempUtils.stats(toSeries(byDay, "mean")).mean;
+          if (mean === null) continue;
+          if (!hottest || mean > hottest.mean) hottest = { year: y, mean };
+          if (!coldest || mean < coldest.mean) coldest = { year: y, mean };
+        } catch { /* station has a gap or the API errored for this year -- skip it */ }
+      }
+      btn.disabled = false;
+      if (hottest && coldest) {
+        yearASel.value = hottest.year;
+        yearBSel.value = coldest.year;
+      }
+      compare();
+    });
+
     document.getElementById("loadBtn").addEventListener("click", compare);
     avgToggle.addEventListener("click", () => {
       avgToggle.classList.toggle("on");
@@ -692,6 +750,7 @@
       compare();
     });
     loadStations().then(compare);
+    applyLang();
   })();
 </script>
 </body>
