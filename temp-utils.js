@@ -43,6 +43,7 @@
   // skips nulls rather than treating them as zero.
   function movingAvg(values, window) {
     window = window || 7;
+    if (window % 2 === 0) window += 1; // centered avg needs odd width; bump even up by one
     const half = Math.floor(window / 2);
     return values.map((_, i) => {
       const slice = values.slice(Math.max(0, i - half), i + half + 1).filter((v) => v !== null && v !== undefined);
