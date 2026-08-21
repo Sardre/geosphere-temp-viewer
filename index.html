@@ -173,7 +173,7 @@
       <button class="primary" id="loadBtn" data-i18n="btn_compare">Compare</button>
     </div>
     <div class="panel-row">
-      <div class="field"><label for="maWindow" data-i18n="lbl_ma">MA window (days)</label><input type="number" id="maWindow" value="7" min="1" max="61"></div>
+      <div class="field"><label for="maWindow" data-i18n="lbl_ma">MA window (days)</label><input type="number" id="maWindow" value="7" min="1" max="61" step="2"></div>
       <div class="field"><label for="heatThreshold" data-i18n="lbl_heat">Heat day threshold (&deg;C)</label><input type="number" id="heatThreshold" value="30"></div>
       <div class="field"><label for="tropicalThreshold" data-i18n="lbl_tropical">Tropical night threshold (&deg;C)</label><input type="number" id="tropicalThreshold" value="20"></div>
       <div class="toggle-wrap" style="margin-left:auto;">
@@ -189,6 +189,12 @@
       <div class="chart-card-head-title">
         <h2 id="chartTitle" data-i18n="chart_h2">Daily mean, enclosed by daily min–max</h2>
         <span data-i18n="chart_sub">Jan 1 – Dec 31, aligned by calendar day</span>
+      </div>
+      <div class="field" id="precipViewField" style="display:none;"><label for="precipView" data-i18n="lbl_precipview">View</label>
+        <select id="precipView">
+          <option value="day" data-i18n="precip_view_day">Daily</option>
+          <option value="month" data-i18n="precip_view_month">Monthly</option>
+        </select>
       </div>
       <div class="field"><label for="chartMode" data-i18n="lbl_chartmode">Chart</label>
         <select id="chartMode">
@@ -231,13 +237,16 @@
       lbl_yearA: { en: "Comparison year", de: "Vergleichsjahr" },
       lbl_yearB: { en: "Baseline year", de: "Basisjahr" },
       lbl_smooth: { en: "Smoothing", de: "Gl\u00e4ttung" },
-      lbl_ma: { en: "MA window (days)", de: "GD Fenster (Tage)" },
+      lbl_ma: { en: "MA window (days)", de: "Mittelwert-Fenster (Tage)" },
       lbl_heat: { en: "Heat day threshold (\u00b0C)", de: "Hitzetag-Schwelle (\u00b0C)" },
       lbl_tropical: { en: "Tropical night threshold (\u00b0C)", de: "Tropennacht-Schwelle (\u00b0C)" },
       lbl_chartmode: { en: "Chart", de: "Diagramm" },
       chart_mode_temp: { en: "Temperature", de: "Temperatur" },
       chart_mode_precip: { en: "Precipitation", de: "Niederschlag" },
       chart_mode_days: { en: "Heat & tropical days", de: "Hitze- & Tropennächte" },
+      lbl_precipview: { en: "View", de: "Ansicht" },
+      precip_view_day: { en: "Daily", de: "T\u00e4glich" },
+      precip_view_month: { en: "Monthly", de: "Monatlich" },
       btn_compare: { en: "Compare", de: "Vergleichen" },
       toggle_title: { en: "Moving average", de: "Gleitender Durchschnitt" },
       toggle_sub: { en: "smooths the mean, min & max curves", de: "gl\u00e4ttet Mittel-, Min- und Max-Kurven" },
@@ -298,6 +307,13 @@
     const ENDPOINT = "https://dataset.api.hub.geosphere.at/v1/station/historical/klima-v2-1d";
     const COLORS = ["#d98a4b", "#3a6ea5"]; // comparison year, baseline year
     const DAYS = 366; // fixed grid; leap years get a Feb-29 slot, others just leave it null
+    // Feb-29 (pinned to index 365) sits past Dec 31 in raw index order; place it
+    // spatially between Feb 28 (idx 58) and Mar 1 (idx 59) instead of at the edge.
+    const xIndex = (i) => (i === 365 ? 58.5 : i);
+    // Line/band paths must be *drawn* in that same spatial order, not raw data
+    // order, or the last segment jumps backward from Dec 31 to Feb 29.
+    const PLOT_ORDER = [];
+    for (let i = 0; i < 365; i++) { PLOT_ORDER.push(i); if (i === 58) PLOT_ORDER.push(365); }
 
     const stationSel = document.getElementById("station");
     const yearASel = document.getElementById("yearA");
@@ -310,6 +326,8 @@
     const heatThresholdInput = document.getElementById("heatThreshold");
     const tropicalThresholdInput = document.getElementById("tropicalThreshold");
     const chartModeSel = document.getElementById("chartMode");
+    const precipViewSel = document.getElementById("precipView");
+    const precipViewField = document.getElementById("precipViewField");
     const chartTitleEl = document.getElementById("chartTitle");
     const diffBody = document.querySelector("#diffTable tbody");
     const roStation = document.getElementById("ro-station");
@@ -393,13 +411,14 @@
     let lastFetchAt = 0; // shared pacing gate, see fetchYear
     async function fetchYear(year) {
       if (yearCache[year]) return yearCache[year];
+      const station = STATION_ID; // pin the station this fetch is for
       // Proactively space requests ~210ms apart (~4.7/sec, under GeoSphere's
       // 5/sec cap) so bursty callers like the extremes preset don't trip the
       // 429 the 429-handler below is only a backstop for.
       const wait = 210 - (Date.now() - lastFetchAt);
       if (wait > 0) await new Promise((r) => setTimeout(r, wait));
       lastFetchAt = Date.now();
-      const url = `${ENDPOINT}?station_ids=${STATION_ID}&parameters=tl_mittel,tlmax,tlmin,rr` +
+      const url = `${ENDPOINT}?station_ids=${station}&parameters=tl_mittel,tlmax,tlmin,rr` +
               `&start=${year}-01-01&end=${year}-12-31&output_format=csv`;
       const res = await fetch(url, { headers: { Accept: "text/csv" } });
       if (res.status === 429) {
@@ -413,7 +432,7 @@
       // fills slot 366, and the chart draws null gaps as breaks, not zeros.
       const byDay = new Array(DAYS + 1).fill(null);
       for (const r of rows) byDay[TempUtils.dayOfYear(r.time)] = r;
-      yearCache[year] = byDay;
+      if (station === STATION_ID) yearCache[year] = byDay;
       return byDay;
     }
 
@@ -453,30 +472,41 @@
       const yMin = Math.floor(Math.min(...allVals) - 2);
       const yMax = Math.ceil(Math.max(...allVals) + 2);
 
-      const x = (i) => padL + (i / (DAYS - 1)) * plotW;
+      const x = (i) => padL + (xIndex(i) / 364) * plotW;
       const y = (v) => padT + plotH - ((v - yMin) / (yMax - yMin)) * plotH;
 
       function linePath(values) {
-        let d = "";
-        values.forEach((v, i) => {
-          if (v === null) return;
-          d += (d ? "L" : "M") + x(i).toFixed(1) + "," + y(v).toFixed(1) + " ";
+        let d = "", drawing = false;
+        PLOT_ORDER.forEach((i) => {
+          const v = values[i];
+          if (v === null) { drawing = false; return; }
+          d += (drawing ? "L" : "M") + x(i).toFixed(1) + "," + y(v).toFixed(1) + " ";
+          drawing = true;
         });
         return d.trim();
       }
 
       function bandPath(minVals, maxVals) {
-        let d = "", started = false;
-        for (let i = 0; i < DAYS; i++) {
-          if (maxVals[i] === null) continue;
-          d += (started ? "L" : "M") + x(i).toFixed(1) + "," + y(maxVals[i]).toFixed(1) + " ";
-          started = true;
+        // One closed polygon per contiguous run where BOTH min and max exist,
+        // so a gap breaks the band instead of drawing an edge across it, and
+        // the top/bottom traces never pair up mismatched indices.
+        const runs = [];
+        let cur = [];
+        for (const i of PLOT_ORDER) {
+          if (minVals[i] === null || maxVals[i] === null) {
+            if (cur.length) runs.push(cur);
+            cur = [];
+            continue;
+          }
+          cur.push(i);
         }
-        for (let i = DAYS - 1; i >= 0; i--) {
-          if (minVals[i] === null) continue;
-          d += "L" + x(i).toFixed(1) + "," + y(minVals[i]).toFixed(1) + " ";
-        }
-        return d + "Z";
+        if (cur.length) runs.push(cur);
+        return runs.map((run) => {
+          let d = "";
+          run.forEach((i) => { d += (d ? "L" : "M") + x(i).toFixed(1) + "," + y(maxVals[i]).toFixed(1) + " "; });
+          for (let k = run.length - 1; k >= 0; k--) { const i = run[k]; d += "L" + x(i).toFixed(1) + "," + y(minVals[i]).toFixed(1) + " "; }
+          return d + "Z";
+        }).join(" ");
       }
 
       const parts = [];
@@ -501,7 +531,7 @@
       const plotW = W - padL - padR, plotH = H - padT - padB, bottom = padT + plotH;
       const precipA = toSeries(byDayA, "precip"), precipB = toSeries(byDayB, "precip");
       const maxV = Math.max(1, ...[...precipA, ...precipB].filter((v) => v !== null));
-      const x = (i) => padL + (i / (DAYS - 1)) * plotW;
+      const x = (i) => padL + (xIndex(i) / 364) * plotW;
       const y = (v) => bottom - (v / maxV) * plotH;
       const step = Math.max(1, Math.ceil(maxV / 5));
       const barW = Math.max(0.6, plotW / DAYS / 2 - 0.3);
@@ -525,6 +555,7 @@
     // bucketed into monthly counts and drawn as grouped bars so year-over-year magnitude reads directly,
     // while the monthly grouping still shows seasonal shape.
     function monthOfDay(i) {
+      if (i === 365) return 1; // pinned Feb-29 slot (dayOfYear's leap-invariant grid) is always February
       for (let m = 11; m >= 0; m--) if (i >= TempUtils.MONTH_STARTS[m]) return m;
     }
     function monthCounts(byDay, field, threshold) {
@@ -533,12 +564,12 @@
       return counts;
     }
 
-    function renderDaysChart(byDayA, byDayB, heatThreshold, tropicalThreshold) {
+    // Shared renderer for monthly grouped-bar charts (N stacked bands,
+    // grouped year-A/year-B bars per month).
+    function renderGroupedMonthlyChart(bands) {
       const W = 900, H = 450, padL = 40, padR = 10, padT = 10, padB = 25;
       const plotW = W - padL - padR, plotH = H - padT - padB;
-      const bandGap = 46; // vertical space between bands, must clear the top band's own label (-4px) and zero line
-      const monthAxisClearance = 20; // keep the tropical band's bottom clear of the month labels drawn at y=444
-      const bandH = (plotH - bandGap - monthAxisClearance) / 2;
+      const bandH = (plotH - 30 * bands.length) / bands.length; // 20px gap per band
       const x = (m) => padL + ((m + 0.5) / 12) * plotW;
       const barW = Math.max(0.6, plotW / 12 / 2 - 2);
 
@@ -561,14 +592,31 @@
         return parts.join("\n");
       }
 
-      const heatTop = padT + 14, tropTop = heatTop + bandH + bandGap;
-      const parts = [
-        band(heatTop, monthCounts(byDayA, "max", heatThreshold), monthCounts(byDayB, "max", heatThreshold), `${t("row_heat")} > ${heatThreshold}\u00B0`),
-        band(tropTop, monthCounts(byDayA, "min", tropicalThreshold), monthCounts(byDayB, "min", tropicalThreshold), `${t("row_tropical")} > ${tropicalThreshold}\u00B0`),
-        ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"]
-                .map((mo, m) => `<text x="${x(m).toFixed(1)}" y="444" font-size="11" fill="#93a1ae">${mo}</text>`).join("\n"),
-      ];
+      const parts = bands.map((b, i) => band(padT + 14 + i * (bandH + 30), b.a, b.b, b.label));
+      parts.push(["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"]
+              .map((mo, m) => `<text x="${x(m).toFixed(1)}" y="444" font-size="11" fill="#93a1ae">${mo}</text>`).join("\n"));
       svg.innerHTML = parts.join("\n");
+    }
+
+    function renderDaysChart(byDayA, byDayB, heatThreshold, tropicalThreshold) {
+      renderGroupedMonthlyChart([
+        { a: monthCounts(byDayA, "max", heatThreshold), b: monthCounts(byDayB, "max", heatThreshold), label: `${t("row_heat")} > ${heatThreshold}\u00B0` },
+        { a: monthCounts(byDayA, "min", tropicalThreshold), b: monthCounts(byDayB, "min", tropicalThreshold), label: `${t("row_tropical")} > ${tropicalThreshold}\u00B0` },
+      ]);
+    }
+
+    // Monthly precipitation totals - reuses monthOfDay from the days-chart
+    // bucketing, but sums rainfall instead of counting threshold crossings.
+    function monthPrecipSum(byDay) {
+      const sums = new Array(12).fill(0);
+      toSeries(byDay, "precip").forEach((v, i) => { if (v) sums[monthOfDay(i)] += v; });
+      return sums;
+    }
+
+    function renderPrecipMonthlyChart(byDayA, byDayB) {
+      renderGroupedMonthlyChart([
+        { a: monthPrecipSum(byDayA), b: monthPrecipSum(byDayB), label: `${t("chart_mode_precip")} (mm)` },
+      ]);
     }
 
     // Difference table is built off each year's daily-mean series for the
@@ -606,12 +654,15 @@
 
     // Last successful render, read by the tooltip mousemove handler.
     let lastRender = null;
+    let compareGen = 0; // bumped on every compare() call; lets an in-flight call detect it's been superseded
 
     async function compare() {
+      const gen = ++compareGen;
       statusEl.textContent = t("loading");
       try {
         const [yearA, yearB] = [yearASel.value, yearBSel.value];
         const [byDayA, byDayB] = await Promise.all([fetchYear(yearA), fetchYear(yearB)]);
+        if (gen !== compareGen) return; // a newer compare() started while we were fetching
         // A year with zero rows breaks both the SVG band path (empty "Z" with
         // no preceding "M") and the diff table (stats() returns null means).
         // Catching it here once, before render/renderDiffTable run.
@@ -625,8 +676,10 @@
         }
         const smooth = avgToggle.classList.contains("on");
         const maWindow = Math.max(1, parseInt(maWindowInput.value, 10) || 1);
-        const heatThreshold = parseFloat(heatThresholdInput.value);
-        const tropicalThreshold = parseFloat(tropicalThresholdInput.value);
+        let heatThreshold = parseFloat(heatThresholdInput.value);
+        if (Number.isNaN(heatThreshold)) heatThreshold = 30;
+        let tropicalThreshold = parseFloat(tropicalThresholdInput.value);
+        if (Number.isNaN(tropicalThreshold)) tropicalThreshold = 20;
         const seriesA = buildSeries(byDayA, smooth, maWindow);
         const seriesB = buildSeries(byDayB, smooth, maWindow);
         const heatA = countDaysAbove(byDayA, "max", heatThreshold);
@@ -636,7 +689,8 @@
 
         const mode = chartModeSel.value;
         if (mode === "precip") {
-          renderPrecipChart(byDayA, byDayB);
+          if (precipViewSel.value === "month") renderPrecipMonthlyChart(byDayA, byDayB);
+          else renderPrecipChart(byDayA, byDayB);
           chartTitleEl.textContent = t("chart_h2_precip");
         } else if (mode === "days") {
           renderDaysChart(byDayA, byDayB, heatThreshold, tropicalThreshold);
@@ -646,7 +700,7 @@
           chartTitleEl.textContent = t("chart_h2");
         }
         renderDiffTable(seriesA, seriesB, byDayA, byDayB, heatA, heatB, tropicalA, tropicalB);
-        lastRender = { mode, byDayA, byDayB, yearA, yearB };
+        lastRender = { mode, view: mode === "precip" ? precipViewSel.value : null, byDayA, byDayB, yearA, yearB };
         updateUrl();
 
         legendEl.innerHTML =
@@ -658,11 +712,13 @@
         statusEl.textContent = "";
         statusEl.classList.remove("error");
       } catch (err) {
+        if (gen !== compareGen) return;
         statusEl.textContent = t("load_error") + err.message + t("load_error_hint");
         statusEl.classList.add("error");
       }
     }
 
+    const MONTH_NAMES = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
     const tooltipEl = document.getElementById("tooltip");
     svg.addEventListener("mousemove", (e) => {
       if (!lastRender || (lastRender.mode !== "temp" && lastRender.mode !== "precip")) {
@@ -672,14 +728,35 @@
       const rect = svg.getBoundingClientRect();
       const padL = 40, padR = 10, plotW = 900 - padL - padR;
       const vbX = ((e.clientX - rect.left) / rect.width) * 900;
-      const i = Math.round(((vbX - padL) / plotW) * (DAYS - 1));
+
+      if (lastRender.mode === "precip" && lastRender.view === "month") {
+        const m = Math.floor(((vbX - padL) / plotW) * 12);
+        if (m < 0 || m > 11) { tooltipEl.style.display = "none"; return; }
+        const sumA = monthPrecipSum(lastRender.byDayA)[m], sumB = monthPrecipSum(lastRender.byDayB)[m];
+        tooltipEl.innerHTML = `<strong>${MONTH_NAMES[m]}</strong><br>` +
+                `<span style="color:${COLORS[0]}">${lastRender.yearA}</span> ${sumA.toFixed(1)} mm<br>` +
+                `<span style="color:${COLORS[1]}">${lastRender.yearB}</span> ${sumB.toFixed(1)} mm`;
+        tooltipEl.style.display = "block";
+        tooltipEl.style.left = Math.min(e.clientX - rect.left + 14, rect.width - 130) + "px";
+        tooltipEl.style.top = (e.clientY - rect.top + 14) + "px";
+        return;
+      }
+
+      const raw = ((vbX - padL) / plotW) * 364;
+      const nearest = Math.max(0, Math.min(364, Math.round(raw)));
+      // Feb-29 plots at xIndex 58.5 (between Feb 28 and Mar 1), off the integer
+      // grid every other day sits on -- check it separately as a hover candidate.
+      const i = Math.abs(raw - 58.5) < Math.abs(raw - nearest) ? 365 : nearest;
       const rA = lastRender.byDayA[i + 1], rB = lastRender.byDayB[i + 1]; // byDay is 1-indexed by day-of-year
       if (i < 0 || i >= DAYS || (!rA && !rB)) {
         tooltipEl.style.display = "none";
         return;
       }
-      // Reference year 2000 (leap) matches the leap-aligned day-of-year grid used everywhere else.
-      const dateLabel = new Date(Date.UTC(2000, 0, i + 1)).toLocaleDateString(lang === "de" ? "de-AT" : "en-GB", { month: "short", day: "numeric" });
+      // MONTH_STARTS assumes a non-leap Feb (28 days); grid indices 1-365 are non-leap
+      // calendar days, only slot 366 if Feb 29 exists.
+      const dateLabel = (i + 1 === 366)
+              ? new Date(Date.UTC(2000, 1, 29)).toLocaleDateString(lang === "de" ? "de-AT" : "en-GB", { month: "short", day: "numeric" })
+              : new Date(Date.UTC(2001, 0, i + 1)).toLocaleDateString(lang === "de" ? "de-AT" : "en-GB", { month: "short", day: "numeric" });
       const fmt = (r) => r ? (lastRender.mode === "precip" ? `${(r.precip ?? 0).toFixed(1)} mm` : `${r.mean?.toFixed(1)}\u00B0`) : "\u2014";
       tooltipEl.innerHTML = `<strong>${dateLabel}</strong><br>` +
               `<span style="color:${COLORS[0]}">${lastRender.yearA}</span> ${fmt(rA)}<br>` +
@@ -736,10 +813,22 @@
       avgToggle.classList.toggle("on");
       compare();
     });
-    maWindowInput.addEventListener("change", compare);
+    maWindowInput.addEventListener("change", () => {
+      // step=2 keeps the spinner arrows odd, but a typed/pasted value can
+      // still land on an even number — snap it up and reflect the correction
+      // back into the field so what's displayed matches what's used.
+      let w = parseInt(maWindowInput.value, 10) || 7;
+      if (w % 2 === 0) w += 1;
+      maWindowInput.value = Math.max(1, w);
+      compare();
+    });
     heatThresholdInput.addEventListener("change", compare);
     tropicalThresholdInput.addEventListener("change", compare);
-    chartModeSel.addEventListener("change", compare);
+    chartModeSel.addEventListener("change", () => {
+      precipViewField.style.display = chartModeSel.value === "precip" ? "" : "none";
+      compare();
+    });
+    precipViewSel.addEventListener("change", compare);
     stationSel.addEventListener("change", () => {
       STATION_ID = stationSel.value;
       // yearCache is keyed by year only, on the assumption of one fixed
